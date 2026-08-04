@@ -66,7 +66,7 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (isFocused && user) {
       loadData();
-      syncService.sync(user.id)
+      syncService.syncIfEnabled(user.id)
         .then(() => loadData())
         .catch(err => console.log('Auto background sync failed:', err));
     }

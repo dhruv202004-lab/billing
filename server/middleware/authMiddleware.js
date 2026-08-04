@@ -17,15 +17,15 @@ const protect = async (req, res, next) => {
       // Add user ID to request object
       req.user = { id: decoded.id };
 
-      next();
+      return next();
     } catch (error) {
       console.error('Token verification error:', error);
-      res.status(401).json({ message: 'Not authorized, token validation failed' });
+      return res.status(401).json({ message: 'Not authorized, token validation failed' });
     }
   }
 
   if (!token) {
-    res.status(401).json({ message: 'Not authorized, no token provided' });
+    return res.status(401).json({ message: 'Not authorized, no token provided' });
   }
 };
 

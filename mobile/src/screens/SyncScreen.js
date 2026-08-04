@@ -72,7 +72,8 @@ export default function SyncScreen() {
         const savedQrCode = await AsyncStorage.getItem('settings_qr_code');
         if (savedQrCode) setQrCodeOnBill(savedQrCode === 'true');
 
-
+        const savedAutoSync = await syncService.getAutoSyncEnabled();
+        setAutoSync(savedAutoSync);
 
         const savedFontSize = await AsyncStorage.getItem('settings_font_size');
         if (savedFontSize) setFontSize(savedFontSize);
@@ -106,6 +107,23 @@ export default function SyncScreen() {
     };
     loadSettings();
   }, []);
+
+  // Update profile states when user context updates
+  useEffect(() => {
+    if (user) {
+      setOwnerName(user.ownerName || '');
+      setPhone(user.phone || '');
+      setEmail(user.email || '');
+      setShopName(user.shopName || '');
+      setShopCategory(user.shopCategory || '');
+    } else {
+      setOwnerName('');
+      setPhone('');
+      setEmail('');
+      setShopName('');
+      setShopCategory('');
+    }
+  }, [user]);
 
   // Save handlers
   const saveSetting = async (key, val) => {
@@ -437,7 +455,13 @@ export default function SyncScreen() {
                   <Text style={[styles.switchLabel, { color: theme.colors.onSurface }]}>Background Auto-Sync (Recommended)</Text>
                   <Switch
                     value={autoSync}
-                    onValueChange={setAutoSync}
+                    onValueChange={(val) => {
+                      setAutoSync(val);
+                      syncService.setAutoSyncEnabled(val).catch((err) => console.error('Failed to save auto-sync setting:', err));
+                      if (val && user?.id) {
+                        syncService.syncIfEnabled(user.id).catch((err) => console.log('Immediate auto sync failed:', err));
+                      }
+                    }}
                     thumbColor={autoSync ? theme.colors.primary : '#f4f3f4'}
                     trackColor={{ false: '#767577', true: '#cbbff8' }}
                   />

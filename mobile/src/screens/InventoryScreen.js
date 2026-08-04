@@ -61,7 +61,7 @@ export default function InventoryScreen() {
   useEffect(() => {
     if (isFocused && user) {
       loadProducts();
-      syncService.sync(user.id)
+      syncService.syncIfEnabled(user.id)
         .then(() => loadProducts())
         .catch(err => console.log('Auto background sync failed:', err));
     }
@@ -79,8 +79,9 @@ export default function InventoryScreen() {
         mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.4,
+        quality: 0.25,
         base64: true,
+        exif: false,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
@@ -229,6 +230,7 @@ export default function InventoryScreen() {
         const created = await dbService.addProduct(user.id, productData);
         setProducts([...products, created]);
       }
+      syncService.syncIfEnabled(user.id).catch((err) => console.log('Product auto sync failed:', err));
       setProductFormVisible(false);
     } catch (err) {
       console.error(err);
@@ -249,6 +251,7 @@ export default function InventoryScreen() {
             try {
               await dbService.deleteProduct(productId);
               setProducts(products.filter(p => p.id !== productId));
+              syncService.syncIfEnabled(user.id).catch((err) => console.log('Product delete auto sync failed:', err));
             } catch (err) {
               console.error(err);
               Alert.alert('Delete Error', 'Failed to delete product.');

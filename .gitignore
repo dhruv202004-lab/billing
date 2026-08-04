@@ -37,3 +37,7 @@ yarn-error.*
 mobile/.claude/
 .agents/
 .gemini/
+
+# logs
+*.log
+server/logs/

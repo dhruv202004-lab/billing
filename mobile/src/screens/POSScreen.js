@@ -68,6 +68,16 @@ export default function POSScreen() {
   const [isSharing, setIsSharing] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
 
+  const getInvoiceDiscountPercent = (invoice) => {
+    const subtotalValue = Number(invoice?.subtotal) || 0;
+    const storedPercent = invoice?.discount_percentage ?? invoice?.discountPercentage;
+    if (storedPercent !== undefined && storedPercent !== null) {
+      return Number(storedPercent) || 0;
+    }
+    const discountValue = Number(invoice?.discount) || 0;
+    return subtotalValue > 0 ? (discountValue / subtotalValue) * 100 : 0;
+  };
+
   const loadData = async () => {
     if (!user) return;
     try {
@@ -83,7 +93,7 @@ export default function POSScreen() {
   useEffect(() => {
     if (isFocused && user) {
       loadData();
-      syncService.sync(user.id)
+      syncService.syncIfEnabled(user.id)
         .then(() => loadData())
         .catch(err => console.log('Auto background sync failed:', err));
     }
@@ -95,7 +105,8 @@ export default function POSScreen() {
 
   // GST & Totals Calculations
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const discountAmt = Number(discount) || 0;
+  const discountPercent = Math.max(0, Number(discount) || 0);
+  const discountAmt = subtotal * (discountPercent / 100);
   const taxableAmount = Math.max(0, subtotal - discountAmt);
 
   let taxAmt = 0;
@@ -165,6 +176,7 @@ export default function POSScreen() {
       const cust = await dbService.addCustomer(user.id, { name: newCustName, phone: newCustPhone });
       setCustomers([...customers, cust]);
       setSelectedCustomer(cust);
+      syncService.syncIfEnabled(user.id).catch((err) => console.log('Quick customer auto sync failed:', err));
       setNewCustName('');
       setNewCustPhone('');
       setNewCustDialogVisible(false);
@@ -261,6 +273,7 @@ export default function POSScreen() {
         items: cart,
         subtotal,
         discount: discountAmt,
+        discountPercentage: discountPercent,
         tax: taxAmt,
         taxType,
         cgst: cgstAmt,
@@ -272,6 +285,7 @@ export default function POSScreen() {
 
       const inv = await dbService.addInvoice(user.id, invoiceData);
       setNewInvoice(inv);
+      syncService.syncIfEnabled(user.id).catch((err) => console.log('Invoice auto sync failed:', err));
 
       // Low stock notification trigger check
       const updatedProducts = products.map(p => {
@@ -506,7 +520,7 @@ export default function POSScreen() {
           <Card.Content style={styles.footerContent}>
             <View style={styles.inputRow}>
               <TextInput
-                label="Discount (₹)"
+                label="Discount (%)"
                 value={discount}
                 onChangeText={setDiscount}
                 keyboardType="numeric"
@@ -617,7 +631,7 @@ export default function POSScreen() {
 
             {discountAmt > 0 && (
               <View style={styles.summaryRow}>
-                <Text style={[styles.summaryLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount</Text>
+                <Text style={[styles.summaryLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount ({discountPercent.toFixed(2)}%)</Text>
                 <Text style={[styles.summaryVal, { color: 'red' }]}>-₹{discountAmt.toFixed(2)}</Text>
               </View>
             )}
@@ -870,7 +884,7 @@ export default function POSScreen() {
 
                     {newInvoice?.discount > 0 && (
                       <View style={styles.receiptTotalRow}>
-                        <Text style={[styles.receiptTotalLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount</Text>
+                        <Text style={[styles.receiptTotalLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount ({getInvoiceDiscountPercent(newInvoice).toFixed(2)}%)</Text>
                         <Text style={[styles.receiptTotalVal, { color: '#ef4444' }]}>-₹{newInvoice?.discount?.toFixed(2)}</Text>
                       </View>
                     )}

@@ -54,7 +54,7 @@ export default function CustomerScreen() {
   useEffect(() => {
     if (isFocused && user) {
       loadCustomers();
-      syncService.sync(user.id)
+      syncService.syncIfEnabled(user.id)
         .then(() => loadCustomers())
         .catch(err => console.log('Auto background sync failed:', err));
     }
@@ -99,6 +99,7 @@ export default function CustomerScreen() {
         const created = await dbService.addCustomer(user.id, customerData);
         setCustomers([...customers, { ...created, invoiceCount: 0, totalSpent: 0 }]);
       }
+      syncService.syncIfEnabled(user.id).catch((err) => console.log('Customer auto sync failed:', err));
       setCustomerDialogVisible(false);
     } catch (err) {
       console.error(err);
@@ -119,6 +120,7 @@ export default function CustomerScreen() {
             try {
               await dbService.deleteCustomer(customerId);
               setCustomers(customers.filter(c => c.id !== customerId));
+              syncService.syncIfEnabled(user.id).catch((err) => console.log('Customer delete auto sync failed:', err));
             } catch (err) {
               console.error(err);
               Alert.alert('Delete Error', 'Failed to delete customer.');

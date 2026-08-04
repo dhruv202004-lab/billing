@@ -4,7 +4,23 @@ import api from '../config/api';
 import * as Network from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const AUTO_SYNC_KEY = 'settings_auto_sync';
+let activeSyncPromise = null;
+
 export const syncService = {
+  getAutoSyncEnabled: async () => {
+    try {
+      const stored = await AsyncStorage.getItem(AUTO_SYNC_KEY);
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  },
+
+  setAutoSyncEnabled: async (enabled) => {
+    await AsyncStorage.setItem(AUTO_SYNC_KEY, String(enabled));
+  },
+
   isOnline: async () => {
     try {
       const state = await Network.getNetworkStateAsync();
@@ -16,10 +32,12 @@ export const syncService = {
 
   pushLocalChanges: async () => {
     const queue = await dbService.getSyncQueue();
-    if (queue.length === 0) return 0;
+    if (queue.length === 0) return { processed: 0, failed: 0, errors: [] };
 
     const db = await getDB();
     let processedCount = 0;
+    let failedCount = 0;
+    const errors = [];
 
     for (let item of queue) {
       const { id: queueId, action, table_name: tableName, local_id: localId, data_json: dataJson } = item;
@@ -102,12 +120,28 @@ export const syncService = {
         await dbService.deleteSyncQueueItem(queueId);
         processedCount++;
       } catch (err) {
-        console.error(`Sync error on queue item ${queueId}:`, err.message);
-        throw new Error(`Sync failed at queue item ${queueId}. Keeping remaining changes offline. Error: ${err.message}`);
+        // Build a richer error message: include HTTP status if available, or flag as Network Error
+        const isNetworkError = !err.response;
+        const status = err.response?.status;
+        const detail = isNetworkError
+          ? `Network Error — server unreachable (queue item ${queueId}, ${action} ${tableName})`
+          : `HTTP ${status} — ${err.response?.data?.message || err.message} (queue item ${queueId}, ${action} ${tableName})`;
+
+        console.warn(`[SyncService] ${detail}`);
+        errors.push({ queueId, action, tableName, detail });
+        failedCount++;
+
+        // Stop processing further items only when the server is completely unreachable;
+        // for HTTP errors (4xx/5xx) we continue so other items are not blocked.
+        if (isNetworkError) {
+          console.warn('[SyncService] Network unreachable — suspending sync, remaining items kept in queue.');
+          break;
+        }
+        // For HTTP errors, continue to the next queue item.
       }
     }
 
-    return processedCount;
+    return { processed: processedCount, failed: failedCount, errors };
   },
 
   pullRemoteChanges: async (userId) => {
@@ -206,7 +240,7 @@ export const syncService = {
 
         const id = Math.random().toString(36).substring(2, 11) + '-' + Math.random().toString(36).substring(2, 11);
         await db.runAsync(
-          'INSERT INTO invoices (id, remote_id, invoice_number, customer_id, customer_name, customer_phone, items_json, subtotal, discount, tax, tax_type, cgst, sgst, igst, total, payment_method, user_id, created_at, updated_at, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "synced");',
+          'INSERT INTO invoices (id, remote_id, invoice_number, customer_id, customer_name, customer_phone, items_json, subtotal, discount, discount_percentage, tax, tax_type, cgst, sgst, igst, total, payment_method, user_id, created_at, updated_at, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "synced");',
           [
             id,
             inv._id,
@@ -217,6 +251,7 @@ export const syncService = {
             JSON.stringify(resolvedItems),
             inv.subtotal,
             inv.discount,
+            inv.discountPercentage || 0,
             inv.tax,
             inv.taxType || 'None',
             inv.cgst || 0,
@@ -236,14 +271,43 @@ export const syncService = {
   },
 
   sync: async (userId) => {
-    const online = await syncService.isOnline();
-    if (!online) {
-      throw new Error('No internet connection. Sync skipped.');
+    if (activeSyncPromise) {
+      return activeSyncPromise;
     }
 
-    const pushed = await syncService.pushLocalChanges();
-    await syncService.pullRemoteChanges(userId);
+    activeSyncPromise = (async () => {
+      const online = await syncService.isOnline();
+      if (!online) {
+        throw new Error('No internet connection. Sync skipped.');
+      }
 
-    return { pushed, success: true };
+      const pushResult = await syncService.pushLocalChanges();
+      await syncService.pullRemoteChanges(userId);
+
+      const success = pushResult.failed === 0;
+      return {
+        pushed: pushResult.processed,
+        failed: pushResult.failed,
+        errors: pushResult.errors,
+        success,
+      };
+    })();
+
+    try {
+      return await activeSyncPromise;
+    } finally {
+      activeSyncPromise = null;
+    }
+  },
+
+  syncIfEnabled: async (userId) => {
+    if (!userId) return null;
+
+    const autoSyncEnabled = await syncService.getAutoSyncEnabled();
+    if (!autoSyncEnabled) {
+      return null;
+    }
+
+    return syncService.sync(userId);
   },
 };

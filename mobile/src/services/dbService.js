@@ -236,6 +236,7 @@ export const dbService = {
       items,
       subtotal,
       discount = 0,
+      discountPercentage = 0,
       tax = 0,
       taxType = 'None',
       cgst = 0,
@@ -247,8 +248,8 @@ export const dbService = {
 
     const itemsJson = JSON.stringify(items);
     await db.runAsync(
-      'INSERT INTO invoices (id, invoice_number, customer_id, customer_name, customer_phone, items_json, subtotal, discount, tax, tax_type, cgst, sgst, igst, total, payment_method, user_id, created_at, updated_at, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
-      [id, invoiceNumber, customerId || '', customerName, customerPhone, itemsJson, Number(subtotal), Number(discount), Number(tax), taxType, Number(cgst), Number(sgst), Number(igst), Number(total), paymentMethod, userId, createdAt, updatedAt, syncStatus]
+      'INSERT INTO invoices (id, invoice_number, customer_id, customer_name, customer_phone, items_json, subtotal, discount, discount_percentage, tax, tax_type, cgst, sgst, igst, total, payment_method, user_id, created_at, updated_at, sync_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);',
+      [id, invoiceNumber, customerId || '', customerName, customerPhone, itemsJson, Number(subtotal), Number(discount), Number(discountPercentage), Number(tax), taxType, Number(cgst), Number(sgst), Number(igst), Number(total), paymentMethod, userId, createdAt, updatedAt, syncStatus]
     );
 
     // Adjust local stock for each product
@@ -277,6 +278,7 @@ export const dbService = {
       items: queueItems,
       subtotal,
       discount,
+      discountPercentage,
       tax,
       taxType,
       cgst,
@@ -287,7 +289,7 @@ export const dbService = {
       createdAt,
     });
 
-    return { id, invoice_number: invoiceNumber, customer_id: customerId, customer_name: customerName, customer_phone: customerPhone, items, subtotal, discount, tax, tax_type: taxType, cgst, sgst, igst, total, payment_method: paymentMethod, user_id: userId, created_at: createdAt, sync_status: syncStatus };
+    return { id, invoice_number: invoiceNumber, customer_id: customerId, customer_name: customerName, customer_phone: customerPhone, items, subtotal, discount, discount_percentage: discountPercentage, tax, tax_type: taxType, cgst, sgst, igst, total, payment_method: paymentMethod, user_id: userId, created_at: createdAt, sync_status: syncStatus };
   },
 
   // SYNC QUEUE HELPER METHODS

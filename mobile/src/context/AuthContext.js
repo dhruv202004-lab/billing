@@ -25,10 +25,7 @@ export const AuthProvider = ({ children }) => {
         await initDB();
 
         // Perform background sync if online
-        const online = await syncService.isOnline();
-        if (online) {
-          syncService.sync(parsedUser.id).catch((err) => console.log('Auto sync error:', err));
-        }
+        syncService.syncIfEnabled(parsedUser.id).catch((err) => console.log('Auto sync error:', err));
       }
     } catch (e) {
       console.error('Failed to load session:', e);
@@ -52,25 +49,23 @@ export const AuthProvider = ({ children }) => {
       setToken(userToken);
       setUser(userData);
 
-      // Initialize SQLite DB
-      await initDB();
-
+      // Initialize SQLite DB and sync — isolated so failures don't mask login success
       try {
-        await syncService.sync(userData.id);
-      } catch (syncErr) {
-        console.log('Initial sync failed (proceeding offline):', syncErr.message);
+        await initDB();
+        await syncService.syncIfEnabled(userData.id);
+      } catch (postLoginErr) {
+        console.log('Post-login setup error (proceeding offline):', postLoginErr.message);
       }
 
       return { success: true };
     } catch (err) {
+      // Only catches API/network errors, not post-login setup errors
       console.error('Login request failed:', err);
       let errMsg = 'Login failed. Please check your credentials.';
       if (err.response) {
         errMsg = err.response.data?.message || 'Login failed. Please check your credentials.';
       } else if (err.request) {
-        errMsg = `Connection Error: Cannot connect to the server. Please ensure the backend server is running and reachable.`;
-      } else {
-        errMsg = `Local Database Error: ${err.message || 'Failed to initialize local database.'}`;
+        errMsg = `Connection Error: Cannot connect to the server. Please ensure the backend server is running.`;
       }
       return { success: false, error: errMsg };
     }
@@ -87,8 +82,13 @@ export const AuthProvider = ({ children }) => {
       setToken(userToken);
       setUser(userData);
 
-      // Initialize SQLite DB
-      await initDB();
+      // Initialize SQLite DB and attempt first sync
+      try {
+        await initDB();
+        await syncService.syncIfEnabled(userData.id);
+      } catch (postRegErr) {
+        console.log('Post-register setup error (proceeding offline):', postRegErr.message);
+      }
 
       return { success: true };
     } catch (err) {
@@ -97,9 +97,7 @@ export const AuthProvider = ({ children }) => {
       if (err.response) {
         errMsg = err.response.data?.message || 'Registration failed. Please try again.';
       } else if (err.request) {
-        errMsg = `Connection Error: Cannot connect to the server. Please ensure the backend server is running and reachable.`;
-      } else {
-        errMsg = `Local Database Error: ${err.message || 'Failed to initialize local database.'}`;
+        errMsg = `Connection Error: Cannot connect to the server. Please ensure the backend server is running.`;
       }
       return { success: false, error: errMsg };
     }

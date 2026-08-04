@@ -8,6 +8,22 @@ const generateToken = (id) => {
   });
 };
 
+// Helper to extract clean error messages from Mongoose errors
+const parseMongooseError = (error) => {
+  // Duplicate key (e.g. email already registered)
+  if (error.code === 11000) {
+    const field = Object.keys(error.keyValue || {})[0] || 'field';
+    return `An account with this ${field} already exists.`;
+  }
+  // Validation errors — join all field messages
+  if (error.name === 'ValidationError') {
+    return Object.values(error.errors)
+      .map((e) => e.message)
+      .join(' ');
+  }
+  return error.message || 'An unexpected server error occurred.';
+};
+
 // @desc    Register a new user
 // @route   POST /api/auth/register
 // @access  Public
@@ -48,7 +64,8 @@ exports.registerUser = async (req, res) => {
     }
   } catch (error) {
     console.error('Register Error:', error);
-    res.status(500).json({ message: error.message || 'Server error during registration' });
+    const status = error.code === 11000 || error.name === 'ValidationError' ? 400 : 500;
+    res.status(status).json({ message: parseMongooseError(error) });
   }
 };
 
@@ -85,7 +102,7 @@ exports.loginUser = async (req, res) => {
     }
   } catch (error) {
     console.error('Login Error:', error);
-    res.status(500).json({ message: 'Server error during login' });
+    res.status(500).json({ message: parseMongooseError(error) });
   }
 };
 

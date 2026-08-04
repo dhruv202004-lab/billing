@@ -9,6 +9,11 @@ export default function InvoiceDetailsScreen({ route }) {
   const { user } = useContext(AuthContext);
 
   const items = typeof invoice.items_json === 'string' ? JSON.parse(invoice.items_json) : (invoice.items || []);
+  const subtotal = Number(invoice.subtotal) || 0;
+  const discountAmount = Number(invoice.discount) || 0;
+  const discountPercent = Number(
+    invoice.discount_percentage ?? invoice.discountPercentage ?? (subtotal > 0 ? (discountAmount / subtotal) * 100 : 0)
+  ) || 0;
 
   const handleSharePdf = async () => {
     try {
@@ -66,12 +71,12 @@ export default function InvoiceDetailsScreen({ route }) {
           <View style={styles.totalsContainer}>
             <View style={styles.row}>
               <Text style={styles.label}>Subtotal</Text>
-              <Text style={styles.subvalue}>₹{Number(invoice.subtotal).toFixed(2)}</Text>
+              <Text style={styles.subvalue}>₹{subtotal.toFixed(2)}</Text>
             </View>
-            {Number(invoice.discount) > 0 && (
+            {discountAmount > 0 && (
               <View style={styles.row}>
-                <Text style={styles.label}>Discount</Text>
-                <Text style={styles.discount}>-₹{Number(invoice.discount).toFixed(2)}</Text>
+                <Text style={styles.label}>Discount ({discountPercent.toFixed(2)}%)</Text>
+                <Text style={styles.discount}>-₹{discountAmount.toFixed(2)}</Text>
               </View>
             )}
             {Number(invoice.tax) > 0 && (

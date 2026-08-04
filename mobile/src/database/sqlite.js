@@ -71,6 +71,7 @@ export const initDB = async () => {
         items_json TEXT NOT NULL,
         subtotal REAL NOT NULL,
         discount REAL NOT NULL DEFAULT 0,
+        discount_percentage REAL NOT NULL DEFAULT 0,
         tax REAL NOT NULL DEFAULT 0,
         tax_type TEXT NOT NULL DEFAULT 'None',
         cgst REAL NOT NULL DEFAULT 0,
@@ -130,6 +131,10 @@ export const initDB = async () => {
     if (!existingInvoiceColumns.includes('customer_phone')) {
       console.log('Migrating invoices table: adding column customer_phone');
       await db.execAsync('ALTER TABLE invoices ADD COLUMN customer_phone TEXT;');
+    }
+    if (!existingInvoiceColumns.includes('discount_percentage')) {
+      console.log('Migrating invoices table: adding column discount_percentage');
+      await db.execAsync('ALTER TABLE invoices ADD COLUMN discount_percentage REAL NOT NULL DEFAULT 0;');
     }
 
     // Auto-Recovery for mismatched sync_queue columns

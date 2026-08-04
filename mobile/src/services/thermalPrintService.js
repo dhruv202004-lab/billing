@@ -15,9 +15,15 @@ export const thermalPrintService = {
   formatInvoice: (shopName, invoice, items) => {
     const C = thermalPrintService.CMD;
     let p = '';
+    const subtotal = Number(invoice.subtotal) || 0;
+    const discountAmount = Number(invoice.discount) || 0;
+    const discountPercent = Number(
+      invoice.discount_percentage ?? invoice.discountPercentage ?? (subtotal > 0 ? (discountAmount / subtotal) * 100 : 0)
+    ) || 0;
+    const taxType = invoice.tax_type || invoice.taxType;
 
     p += C.INIT;
-    
+
     p += C.ALIGN_CENTER + C.TEXT_DOUBLE + C.BOLD_ON + shopName + C.LINE_FEED;
     p += C.TEXT_NORMAL + C.BOLD_OFF + 'SALES RECEIPT' + C.LINE_FEED;
     p += '--------------------------------' + C.LINE_FEED;
@@ -43,12 +49,12 @@ export const thermalPrintService = {
     p += '--------------------------------' + C.LINE_FEED;
 
     p += C.ALIGN_RIGHT;
-    p += `Subtotal: ₹${Number(invoice.subtotal).toFixed(2)}` + C.LINE_FEED;
-    if (invoice.discount > 0) {
-      p += `Discount: -₹${Number(invoice.discount).toFixed(2)}` + C.LINE_FEED;
+    p += `Subtotal: ₹${subtotal.toFixed(2)}` + C.LINE_FEED;
+    if (discountAmount > 0) {
+      p += `Discount(${discountPercent.toFixed(2)}%): -₹${discountAmount.toFixed(2)}` + C.LINE_FEED;
     }
-    if (invoice.tax_type && invoice.tax_type !== 'None') {
-      p += `${invoice.tax_type} Tax: +₹${Number(invoice.tax).toFixed(2)}` + C.LINE_FEED;
+    if (taxType && taxType !== 'None') {
+      p += `${taxType} Tax: +₹${Number(invoice.tax).toFixed(2)}` + C.LINE_FEED;
       if (invoice.cgst > 0) p += `  CGST: +₹${Number(invoice.cgst).toFixed(2)}` + C.LINE_FEED;
       if (invoice.sgst > 0) p += `  SGST: +₹${Number(invoice.sgst).toFixed(2)}` + C.LINE_FEED;
       if (invoice.igst > 0) p += `  IGST: +₹${Number(invoice.igst).toFixed(2)}` + C.LINE_FEED;
@@ -60,7 +66,7 @@ export const thermalPrintService = {
     p += 'Thank you for shopping!' + C.LINE_FEED;
     p += 'Software Powered by Offline POS' + C.LINE_FEED;
     p += C.LINE_FEED + C.LINE_FEED + C.LINE_FEED;
-    
+
     p += C.CUT;
 
     return p;

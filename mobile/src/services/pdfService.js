@@ -5,21 +5,33 @@ import { getDB } from '../database/sqlite';
 
 export const pdfService = {
   generateInvoiceHtml: (shopName, invoice, items, userDetails = {}, customerPhone = '') => {
-    // Format Date & Time matching mockup: e.g. 24-Oct-2023 04:20:15PM
     const invoiceDate = new Date(invoice.created_at);
-    
-    const dateStr = invoiceDate.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }).replace(/ /g, '-'); // e.g. 24-Oct-2023
 
-    const timeStr = invoiceDate.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    }).replace(/ /g, ''); // e.g. 04:20:15PM
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const month = months[invoiceDate.getMonth()];
+    const year = invoiceDate.getFullYear();
+    const dateStr = `${day}-${month}-${year}`;
+
+    let hours = invoiceDate.getHours();
+    const minutes = String(invoiceDate.getMinutes()).padStart(2, '0');
+    const seconds = String(invoiceDate.getSeconds()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hoursStr = String(hours).padStart(2, '0');
+    const timeStr = `${hoursStr}:${minutes}:${seconds}${ampm}`;
+
+    const subtotal = Number(invoice.subtotal) || 0;
+    const discountAmount = Number(invoice.discount) || 0;
+    const discountPercent = Number(
+      invoice.discount_percentage ?? invoice.discountPercentage ?? (subtotal > 0 ? (discountAmount / subtotal) * 100 : 0)
+    ) || 0;
+    const taxAmount = Number(invoice.tax) || 0;
+    const taxLabel = invoice.tax_type || invoice.taxType || 'None';
+
+    const formatCurrency = (value) =>
+      `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     const tableRows = items.map((item, idx) => `
       <tr>
@@ -35,8 +47,8 @@ export const pdfService = {
           }
         </td>
         <td style="text-align: center;">${item.quantity}</td>
-        <td style="text-align: right;">₹${Number(item.price).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td style="text-align: right; font-weight: bold;">₹${Number(item.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td style="text-align: right;">${formatCurrency(item.price)}</td>
+        <td style="text-align: right; font-weight: bold;">${formatCurrency(item.total)}</td>
       </tr>
     `).join('');
 
@@ -216,7 +228,7 @@ export const pdfService = {
               display: inline-table;
               border-collapse: collapse;
               font-size: 13px;
-              width: 250px;
+              width: 260px;
               text-align: left;
             }
             .totals-summary-table tr td {
@@ -252,7 +264,6 @@ export const pdfService = {
         <body>
           <div class="top-invoice-label">Invoice</div>
 
-          <!-- Centered Shop Banner -->
           <div class="logo-container">
             <div class="logo-box">
               <div class="logo-text-main">${shopName.toUpperCase()}</div>
@@ -265,7 +276,6 @@ export const pdfService = {
 
           <div class="header-divider"></div>
 
-          <!-- Metadata Section -->
           <div class="meta-section">
             <div class="meta-col-left">
               <div class="meta-title">To,</div>
@@ -293,7 +303,6 @@ export const pdfService = {
             </div>
           </div>
 
-          <!-- Items Table -->
           <table class="items-table">
             <thead>
               <tr>
@@ -311,10 +320,8 @@ export const pdfService = {
 
           <div class="dashed-divider"></div>
 
-          <!-- Footnote & Totals Section -->
           <div class="footer-section">
             <div class="footer-left">
-              <!-- Social Contacts Footnote -->
               <div class="social-icons-row">
                 <span class="social-icon-wrapper">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="#3b5998" style="vertical-align: middle;"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
@@ -329,25 +336,29 @@ export const pdfService = {
               </div>
               <div class="gstin-label">GSTIN: 22AAAAA0000A1Z5</div>
             </div>
-            
+
             <div class="footer-right">
-              <!-- Totals Table -->
               <table class="totals-summary-table">
+                <tr>
+                  <td style="text-align: left; color: #475569;">Subtotal</td>
+                  <td style="text-align: right; color: #0f172a;">${formatCurrency(subtotal)}</td>
+                </tr>
+                ${discountAmount > 0 ? `
+                <tr>
+                  <td style="text-align: left; color: #475569;">Discount (${discountPercent.toFixed(2)}%)</td>
+                  <td style="text-align: right; color: #dc2626;">-${formatCurrency(discountAmount)}</td>
+                </tr>` : ''}
+                ${taxAmount > 0 ? `
+                <tr>
+                  <td style="text-align: left; color: #475569;">Tax (${taxLabel})</td>
+                  <td style="text-align: right; color: #0f172a;">+${formatCurrency(taxAmount)}</td>
+                </tr>` : ''}
                 <tr class="grand-total-row">
                   <td style="text-align: left;">TOTAL</td>
-                  <td style="text-align: right;">₹${Number(invoice.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                </tr>
-                <tr>
-                  <td style="text-align: left; color: #475569; padding-top: 8px;">Advance</td>
-                  <td style="text-align: right; color: #0f172a; padding-top: 8px;">₹${Number(invoice.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                </tr>
-                <tr>
-                  <td style="text-align: left; color: #475569;">Balance</td>
-                  <td style="text-align: right; color: #0f172a;">₹0.00</td>
+                  <td style="text-align: right;">${formatCurrency(invoice.total)}</td>
                 </tr>
               </table>
               <br/>
-              <!-- Signature Box -->
               <div class="signature-box">
                 <div class="signature-line"></div>
                 <div class="signature-text">SIGN</div>
@@ -361,7 +372,6 @@ export const pdfService = {
 
   shareInvoicePdf: async (shopName, invoice, items, userDetails = {}) => {
     try {
-      // 1. Fetch customer details if id exists
       let customerPhone = invoice.customer_phone || '';
       if (!customerPhone && invoice.customer_id) {
         try {
@@ -375,11 +385,9 @@ export const pdfService = {
         }
       }
 
-      // 2. Fetch product details (brand, description) from SQLite for items
       const enrichedItems = await Promise.all(items.map(async (item) => {
         try {
           const db = await getDB();
-          // Find by local id (if synced from cart, id matches SQLite product.id)
           const prod = await db.getFirstAsync('SELECT description, brand FROM products WHERE id = ?;', [item.id]);
           return {
             ...item,
@@ -391,14 +399,12 @@ export const pdfService = {
         }
       }));
 
-      // 3. Compile HTML
       const htmlContent = pdfService.generateInvoiceHtml(shopName, invoice, enrichedItems, userDetails, customerPhone);
-      
+
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,
       });
 
-      // Sanitize the source URI returned by Print.printToFileAsync to have file:///
       let sourceUri = uri || '';
       if (sourceUri) {
         if (!sourceUri.startsWith('file://')) {
@@ -412,8 +418,6 @@ export const pdfService = {
         }
       }
 
-      // Copy the generated PDF to a clean filename in the root cache directory.
-      // This solves Android FileProvider access issues with subdirectories.
       let shareUri = sourceUri;
       try {
         if (FileSystem && FileSystem.cacheDirectory) {
