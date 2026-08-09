@@ -2,9 +2,20 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { getDB } from '../database/sqlite';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const pdfService = {
-  generateInvoiceHtml: (shopName, invoice, items, userDetails = {}, customerPhone = '') => {
+  generateInvoiceHtml: (shopName, invoice, items, userDetails = {}, customerPhone = '', layoutDetails = {}) => {
+    const headerSub = layoutDetails.headerSub || 'Invoice / Bill Summary';
+    const footerMsg = layoutDetails.footerMsg || 'Thank you for your business!';
+    const showSign = layoutDetails.showSign !== undefined ? layoutDetails.showSign : true;
+    const address = layoutDetails.address || '123 Silicon Valley Road, Bangalore - 560001';
+    const gstin = layoutDetails.gstin || '22AAAAA0000A1Z5';
+    const logoImage = layoutDetails.logoImage || null;
+    const instagram = layoutDetails.instagram || '';
+    const gmail = layoutDetails.gmail || '';
+    const contactNumber = layoutDetails.contactNumber || '';
+
     const invoiceDate = new Date(invoice.created_at);
 
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -262,15 +273,19 @@ export const pdfService = {
           </style>
         </head>
         <body>
-          <div class="top-invoice-label">Invoice</div>
+          <div class="top-invoice-label">${headerSub}</div>
 
           <div class="logo-container">
+            ${logoImage ? `
+            <div style="text-align: center; margin-bottom: 12px;">
+              <img src="${logoImage}" style="max-height: 70px; max-width: 220px; object-fit: contain;" />
+            </div>` : `
             <div class="logo-box">
               <div class="logo-text-main">${shopName.toUpperCase()}</div>
-            </div>
+            </div>`}
             <div class="shop-details">
-              123 Silicon Valley Road, Bangalore - 560001.<br/>
-              ${userDetails.email || 'contact@lumina.com'}
+              ${address}<br/>
+              ${gmail || userDetails.email || 'contact@lumina.com'}
             </div>
           </div>
 
@@ -322,19 +337,29 @@ export const pdfService = {
 
           <div class="footer-section">
             <div class="footer-left">
-              <div class="social-icons-row">
-                <span class="social-icon-wrapper">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#3b5998" style="vertical-align: middle;"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                </span>
-                <span class="social-icon-wrapper">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#e1306c" style="vertical-align: middle;"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
-                </span>
-                <span class="social-icon-wrapper">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="#25d366" style="vertical-align: middle;"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.717-1.456L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.863-9.73.001-2.595-1.013-5.035-2.856-6.88C16.638 2.148 14.195 1.13 11.602 1.13c-5.45 0-9.875 4.372-9.878 9.735-.001 1.778.496 3.507 1.441 5.062L2.16 20.4l4.487-1.246z"/></svg>
-                  <span class="social-icon-text">${userDetails.phone || '+91 98765 43210'}</span>
-                </span>
+              <div class="social-icons-row" style="margin-top: 10px; display: flex; flex-wrap: wrap;">
+                ${contactNumber || userDetails.phone ? `
+                <span class="social-icon-wrapper" style="margin-right: 15px; margin-bottom: 5px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#25d366" style="vertical-align: middle; margin-right: 4px;"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.513 2.262 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.717-1.456L0 24zm6.59-4.846c1.6.95 3.188 1.449 4.825 1.451 5.436 0 9.86-4.37 9.863-9.73.001-2.595-1.013-5.035-2.856-6.88C16.638 2.148 14.195 1.13 11.602 1.13c-5.45 0-9.875 4.372-9.878 9.735-.001 1.778.496 3.507 1.441 5.062L2.16 20.4l4.487-1.246z"/></svg>
+                  <span class="social-icon-text" style="font-size: 11px; color: #475569; font-weight: 600; vertical-align: middle;">${contactNumber || userDetails.phone}</span>
+                </span>` : ''}
+
+                ${instagram ? `
+                <span class="social-icon-wrapper" style="margin-right: 15px; margin-bottom: 5px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#e1306c" style="vertical-align: middle; margin-right: 4px;"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+                  <span class="social-icon-text" style="font-size: 11px; color: #475569; font-weight: 600; vertical-align: middle;">${instagram}</span>
+                </span>` : ''}
+
+                ${gmail ? `
+                <span class="social-icon-wrapper" style="margin-right: 15px; margin-bottom: 5px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335" style="vertical-align: middle; margin-right: 4px;"><path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-1.29 1.454-2.032 2.514-1.234L12 10.917l9.486-7.114C22.546 3.005 24 3.747 24 5.457z"/></svg>
+                  <span class="social-icon-text" style="font-size: 11px; color: #475569; font-weight: 600; vertical-align: middle;">${gmail}</span>
+                </span>` : ''}
               </div>
-              <div class="gstin-label">GSTIN: 22AAAAA0000A1Z5</div>
+              <div class="gstin-label">GSTIN: ${gstin}</div>
+              <div style="font-size: 11px; margin-top: 15px; color: #64748b; line-height: 1.4; font-style: italic; text-align: left;">
+                ${footerMsg.replace(/\n/g, '<br/>')}
+              </div>
             </div>
 
             <div class="footer-right">
@@ -358,11 +383,12 @@ export const pdfService = {
                   <td style="text-align: right;">${formatCurrency(invoice.total)}</td>
                 </tr>
               </table>
+              ${showSign ? `
               <br/>
               <div class="signature-box">
                 <div class="signature-line"></div>
                 <div class="signature-text">SIGN</div>
-              </div>
+              </div>` : ''}
             </div>
           </div>
         </body>
@@ -399,7 +425,28 @@ export const pdfService = {
         }
       }));
 
-      const htmlContent = pdfService.generateInvoiceHtml(shopName, invoice, enrichedItems, userDetails, customerPhone);
+      const headerSub = await AsyncStorage.getItem('settings_layout_header_sub') || 'Invoice / Bill Summary';
+      const footerMsg = await AsyncStorage.getItem('settings_layout_footer_msg') || 'Thank you for your business!';
+      const showSignString = await AsyncStorage.getItem('settings_layout_show_sign');
+      const showSign = showSignString !== null ? showSignString === 'true' : true;
+      const address = await AsyncStorage.getItem('settings_business_address') || '123 Silicon Valley Road, Bangalore - 560001';
+      const gstin = await AsyncStorage.getItem('settings_gstin') || '22AAAAA0000A1Z5';
+      const instagram = await AsyncStorage.getItem('settings_layout_instagram') || '';
+      const gmail = await AsyncStorage.getItem('settings_layout_gmail') || '';
+      const contactNumber = await AsyncStorage.getItem('settings_layout_contact_number') || '';
+      const logoImage = await AsyncStorage.getItem('settings_layout_logo_image') || null;
+
+      const htmlContent = pdfService.generateInvoiceHtml(shopName, invoice, enrichedItems, userDetails, customerPhone, {
+        headerSub,
+        footerMsg,
+        showSign,
+        address,
+        gstin,
+        instagram,
+        gmail,
+        contactNumber,
+        logoImage
+      });
 
       const { uri } = await Print.printToFileAsync({
         html: htmlContent,

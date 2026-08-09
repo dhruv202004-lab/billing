@@ -13,6 +13,7 @@ exports.getProducts = async (req, res) => {
     const products = await Product.find(query);
     res.json(products);
   } catch (error) {
+    console.error('getProducts error:', error);
     res.status(500).json({ message: error.message || 'Error fetching products' });
   }
 };
@@ -59,6 +60,7 @@ exports.upsertProducts = async (req, res) => {
 
     res.status(201).json(Array.isArray(req.body) ? results : results[0]);
   } catch (error) {
+    console.error('upsertProducts error:', error);
     res.status(500).json({ message: error.message || 'Error upserting products' });
   }
 };
@@ -89,6 +91,7 @@ exports.updateProduct = async (req, res) => {
 
     res.json(product);
   } catch (error) {
+    console.error('updateProduct error:', error);
     res.status(500).json({ message: error.message || 'Error updating product' });
   }
 };
@@ -104,6 +107,7 @@ exports.deleteProduct = async (req, res) => {
 
     res.json({ message: 'Product deleted successfully', id: req.params.id });
   } catch (error) {
+    console.error('deleteProduct error:', error);
     res.status(500).json({ message: error.message || 'Error deleting product' });
   }
 };

@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../config/api';
 import { initDB } from '../database/sqlite';
 import { syncService } from '../services/syncService';
+import { safeJsonParse } from '../utils/safeJson';
 
 export const AuthContext = createContext();
 
@@ -18,7 +19,11 @@ export const AuthProvider = ({ children }) => {
 
       if (storedToken && storedUser) {
         setToken(storedToken);
-        const parsedUser = JSON.parse(storedUser);
+        const parsedUser = safeJsonParse(storedUser);
+        if (!parsedUser) {
+          await AsyncStorage.multiRemove(['token', 'user']);
+          return;
+        }
         setUser(parsedUser);
 
         // Initialize SQLite DB

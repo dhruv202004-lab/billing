@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useContext } from 'react';
-import { View, StyleSheet, ScrollView, Modal, FlatList, Alert, Image } from 'react-native';
+import React, { useState, useEffect, useContext, useRef } from 'react';
+import { View, StyleSheet, ScrollView, Modal, FlatList, Alert, Image, Linking, Platform } from 'react-native';
 import { Text, TextInput, Button, Card, IconButton, Divider, Portal, Dialog, List, Chip, useTheme } from 'react-native-paper';
 import { useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -11,6 +11,9 @@ import { notificationService } from '../services/notificationService';
 import { thermalPrintService } from '../services/thermalPrintService';
 import { getDB } from '../database/sqlite';
 import * as Print from 'expo-print';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function POSScreen() {
   const { user } = useContext(AuthContext);
@@ -67,6 +70,36 @@ export default function POSScreen() {
   const [searchProductQuery, setSearchProductQuery] = useState('');
   const [isSharing, setIsSharing] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const receiptRef = useRef(null);
+  const [printLayout, setPrintLayout] = useState({
+    headerSub: 'Invoice / Bill Summary',
+    footerMsg: 'Thank you for your business!',
+    showSign: true,
+    address: '123 Silicon Valley Road, Bangalore - 560001',
+    gstin: '22AAAAA0000A1Z5',
+    instagram: '',
+    gmail: '',
+    contactNumber: '',
+    logoImage: null
+  });
+
+  const loadPrintLayout = async () => {
+    try {
+      const headerSub = await AsyncStorage.getItem('settings_layout_header_sub') || 'Invoice / Bill Summary';
+      const footerMsg = await AsyncStorage.getItem('settings_layout_footer_msg') || 'Thank you for your business!';
+      const showSignString = await AsyncStorage.getItem('settings_layout_show_sign');
+      const showSign = showSignString !== null ? showSignString === 'true' : true;
+      const address = await AsyncStorage.getItem('settings_business_address') || '123 Silicon Valley Road, Bangalore - 560001';
+      const gstin = await AsyncStorage.getItem('settings_gstin') || '22AAAAA0000A1Z5';
+      const instagram = await AsyncStorage.getItem('settings_layout_instagram') || '';
+      const gmail = await AsyncStorage.getItem('settings_layout_gmail') || '';
+      const contactNumber = await AsyncStorage.getItem('settings_layout_contact_number') || '';
+      const logoImage = await AsyncStorage.getItem('settings_layout_logo_image') || null;
+      setPrintLayout({ headerSub, footerMsg, showSign, address, gstin, instagram, gmail, contactNumber, logoImage });
+    } catch (err) {
+      console.log('Error loading print layout in POSScreen:', err);
+    }
+  };
 
   const getInvoiceDiscountPercent = (invoice) => {
     const subtotalValue = Number(invoice?.subtotal) || 0;
@@ -76,6 +109,29 @@ export default function POSScreen() {
     }
     const discountValue = Number(invoice?.discount) || 0;
     return subtotalValue > 0 ? (discountValue / subtotalValue) * 100 : 0;
+  };
+
+  const getInvoiceDateStr = (date) => {
+    if (!date) return '';
+    const invoiceDate = new Date(date);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const month = months[invoiceDate.getMonth()];
+    const year = invoiceDate.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
+  const getInvoiceTimeStr = (date) => {
+    if (!date) return '';
+    const invoiceDate = new Date(date);
+    let hours = invoiceDate.getHours();
+    const minutes = String(invoiceDate.getMinutes()).padStart(2, '0');
+    const seconds = String(invoiceDate.getSeconds()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hoursStr = String(hours).padStart(2, '0');
+    return `${hoursStr}:${minutes}:${seconds}${ampm}`;
   };
 
   const loadData = async () => {
@@ -93,6 +149,7 @@ export default function POSScreen() {
   useEffect(() => {
     if (isFocused && user) {
       loadData();
+      loadPrintLayout();
       syncService.syncIfEnabled(user.id)
         .then(() => loadData())
         .catch(err => console.log('Auto background sync failed:', err));
@@ -335,6 +392,187 @@ export default function POSScreen() {
     }
   };
 
+  const handleShareImage = async () => {
+    if (!newInvoice || isSharing) return;
+    setIsSharing(true);
+    try {
+      if (!receiptRef.current) {
+        throw new Error('Receipt view is not ready yet.');
+      }
+
+      const uri = await captureRef(receiptRef, {
+        format: 'png',
+        quality: 0.9,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: `Invoice_${newInvoice.invoice_number}`,
+          UTI: 'public.png',
+        });
+        setSuccessDialogVisible(false);
+      } else {
+        Alert.alert('Sharing Error', 'Sharing is not available on this device.');
+      }
+    } catch (err) {
+      console.error(err);
+      const errMsg = err.message || '';
+      if (!errMsg.includes('rejected') && !errMsg.includes('cancel') && !errMsg.includes('dismiss')) {
+        Alert.alert('Share Error', 'Failed to capture and share receipt image.');
+      }
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
+  const handleSendTextBill = () => {
+    if (!newInvoice) return;
+    const phone = newInvoice.customer_phone || '';
+    if (!phone) {
+      Alert.alert('No Phone Number', 'This customer does not have a phone number saved.');
+      return;
+    }
+    const cleanPhone = phone.replace(/[^0-9+]/g, '');
+
+    const itemsList = newInvoice.items || [];
+    const itemsText = itemsList.map((item, idx) => 
+      `${idx + 1}. *${item.name}* - ${item.quantity}x @ ₹${item.price.toFixed(2)} = ₹${item.total.toFixed(2)}`
+    ).join('\n');
+
+    const shopName = user?.shopName || 'Our Shop';
+    const invoiceNum = newInvoice.invoice_number;
+    const dateStr = newInvoice.created_at ? new Date(newInvoice.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+
+    const discountText = newInvoice.discount > 0 ? `\n*Discount:* -₹${newInvoice.discount.toFixed(2)}` : '';
+    const taxText = newInvoice.tax > 0 ? `\n*Tax (${newInvoice.tax_type}):* +₹${newInvoice.tax.toFixed(2)}` : '';
+
+    const receiptMsg = `*INVOICE FROM ${shopName.toUpperCase()}*
+----------------------------------------
+*Invoice No:* ${invoiceNum}
+*Date:* ${dateStr}
+*Customer:* ${newInvoice.customer_name}
+----------------------------------------
+*Items Purchased:*
+${itemsText}
+----------------------------------------
+*Subtotal:* ₹${newInvoice.subtotal.toFixed(2)}${discountText}${taxText}
+*GRAND TOTAL: ₹${newInvoice.total.toFixed(2)}*
+----------------------------------------
+*Payment Method:* ${newInvoice.payment_method}
+Thank you for your business!`;
+
+    const whatsappUrl = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(receiptMsg)}`;
+    const smsUrl = `sms:${cleanPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(receiptMsg)}`;
+
+    Linking.openURL(whatsappUrl).catch(() => {
+      Linking.openURL(smsUrl).catch(() => {
+        Alert.alert('Error', 'Could not open WhatsApp or SMS on this device.');
+      });
+    });
+  };
+
+  const handleSendBillPress = async () => {
+    if (!newInvoice || !receiptRef.current) return;
+    try {
+      const cleanPhone = (newInvoice.customer_phone || '').replace(/[^0-9]/g, '');
+      if (!cleanPhone) {
+        Alert.alert('No Contact Number', 'This customer does not have a contact number saved.');
+        return;
+      }
+
+      // Check if RNShare native module is available
+      const { NativeModules } = require('react-native');
+      const isShareSingleAvailable = !!NativeModules.RNShare;
+
+      // 1. Capture receipt image view screenshot
+      const uri = await captureRef(receiptRef, {
+        format: 'png',
+        quality: 0.8,
+      });
+
+      if (!isShareSingleAvailable) {
+        // Fallback for Expo Go: Use expo-sharing to share the captured bill image
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: `Invoice_${newInvoice.invoice_number}`,
+            UTI: 'public.png',
+          });
+        } else {
+          // If sharing is not available at all, fallback to SMS/WhatsApp text link
+          const itemsText = newInvoice.items.map(item => `- ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)})`).join('\n');
+          const receiptMsg = `*INVOICE FROM ${user?.shopName || 'SHOP'}*
+----------------------------------------
+*Invoice No:* ${newInvoice.invoice_number}
+*Customer:* ${newInvoice.customer_name}
+----------------------------------------
+*Items:*
+${itemsText}
+----------------------------------------
+*Total: ₹${newInvoice.total.toFixed(2)}*
+Thank you for your business!`;
+
+          const whatsappUrl = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(receiptMsg)}`;
+          const smsUrl = `sms:${cleanPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(receiptMsg)}`;
+
+          Linking.openURL(whatsappUrl).catch(() => {
+            Linking.openURL(smsUrl).catch(() => {
+              Alert.alert('Error', 'Could not open WhatsApp or SMS on this device.');
+            });
+          });
+        }
+        return;
+      }
+
+      // Format receipt text description message
+      const itemsText = newInvoice.items.map(item => `- ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)})`).join('\n');
+      const receiptMsg = `*INVOICE FROM ${user?.shopName || 'SHOP'}*
+----------------------------------------
+*Invoice No:* ${newInvoice.invoice_number}
+*Customer:* ${newInvoice.customer_name}
+----------------------------------------
+*Items:*
+${itemsText}
+----------------------------------------
+*Total: ₹${newInvoice.total.toFixed(2)}*
+Thank you for your business!`;
+
+      // 2. Share single to WhatsApp directly (when native RNShare is compiled in the app)
+      const Share = require('react-native-share').default;
+      const shareOptions = {
+        title: 'Share Receipt',
+        message: receiptMsg,
+        url: uri, // local path to PNG viewshot
+        social: Share.Social.WHATSAPP,
+        whatsAppNumber: cleanPhone, // Customer's phone number without leading '+'
+      };
+
+      await Share.shareSingle(shareOptions);
+    } catch (err) {
+      console.log('Direct WhatsApp share error:', err);
+      // Fallback: system share menu
+      Alert.alert(
+        'WhatsApp Direct Share Failed',
+        'Could not open WhatsApp directly with image. Would you like to use the system share menu instead?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Use Share Menu',
+            onPress: async () => {
+              try {
+                const uri = await captureRef(receiptRef, { format: 'png', quality: 0.8 });
+                await Sharing.shareAsync(uri);
+              } catch (shareErr) {
+                console.error(shareErr);
+              }
+            }
+          }
+        ]
+      );
+    }
+  };
+
   const handleSystemPrint = async () => {
     if (!newInvoice || isPrinting) return;
     setIsPrinting(true);
@@ -349,7 +587,17 @@ export default function POSScreen() {
         };
       }));
       const customerPhone = newInvoice.customer_phone || '';
-      const html = pdfService.generateInvoiceHtml(user.shopName, newInvoice, enrichedItems, user, customerPhone);
+      const html = pdfService.generateInvoiceHtml(user.shopName, newInvoice, enrichedItems, user, customerPhone, {
+        headerSub: printLayout.headerSub,
+        footerMsg: printLayout.footerMsg,
+        showSign: printLayout.showSign,
+        address: printLayout.address,
+        gstin: printLayout.gstin,
+        instagram: printLayout.instagram,
+        gmail: printLayout.gmail,
+        contactNumber: printLayout.contactNumber,
+        logoImage: printLayout.logoImage
+      });
       await Print.printAsync({ html });
     } catch (err) {
       console.error(err);
@@ -364,7 +612,15 @@ export default function POSScreen() {
 
   const handleThermalPrint = () => {
     if (!newInvoice) return;
-    const printData = thermalPrintService.formatInvoice(user.shopName, newInvoice, newInvoice.items);
+    const printData = thermalPrintService.formatInvoice(user.shopName, newInvoice, newInvoice.items, {
+      headerSub: printLayout.headerSub,
+      footerMsg: printLayout.footerMsg,
+      address: printLayout.address,
+      gstin: printLayout.gstin,
+      instagram: printLayout.instagram,
+      gmail: printLayout.gmail,
+      contactNumber: printLayout.contactNumber
+    });
     Alert.alert(
       'Thermal Printer Payload',
       'The receipt has been formatted in standard ESC/POS. Preview:\n\n' + printData.substring(0, 150) + '...',
@@ -824,94 +1080,166 @@ export default function POSScreen() {
               </View>
 
               <ScrollView contentContainerStyle={styles.receiptScrollContent}>
-                <Card style={[styles.receiptCard, { backgroundColor: theme.colors.surface }]}>
-                  <Card.Content>
-                    <Text style={[styles.receiptShopName, { color: theme.colors.onSurface }]}>{user?.shopName || 'SHOP RECEIPT'}</Text>
-                    <Text style={[styles.receiptShopSub, { color: theme.colors.onSurface + 'b3' }]}>Invoice / Bill Summary</Text>
+                <View ref={receiptRef} collapsable={false} style={{ backgroundColor: '#ffffff', padding: 24, borderRadius: 4, borderWidth: 1, borderColor: '#ebdcd0' }}>
+                  {/* Top Invoice Label */}
+                  <Text style={{ textAlign: 'right', fontSize: 11, letterSpacing: 2, color: '#7a431d', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 12 }}>
+                    {printLayout.headerSub || 'INVOICE / BILL SUMMARY'}
+                  </Text>
 
-                    <Divider style={styles.dashedDivider} />
-
-                    <View style={styles.receiptMetaRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.receiptMetaLabel, { color: theme.colors.onSurface + '99' }]}>Bill No:</Text>
-                        <Text style={[styles.receiptMetaVal, { color: theme.colors.onSurface }]}>{newInvoice?.invoice_number}</Text>
-                      </View>
-                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <Text style={[styles.receiptMetaLabel, { color: theme.colors.onSurface + '99' }]}>Date & Time:</Text>
-                        <Text style={[styles.receiptMetaVal, { color: theme.colors.onSurface }]}>
-                          {newInvoice?.created_at ? new Date(newInvoice.created_at).toLocaleString() : ''}
+                  {/* Logo or Shop Name Box */}
+                  <View style={{ alignItems: 'center', marginBottom: 15 }}>
+                    {printLayout.logoImage ? (
+                      <Image source={{ uri: printLayout.logoImage }} style={{ width: 180, height: 60, resizeMode: 'contain', marginBottom: 8 }} />
+                    ) : (
+                      <View style={{ backgroundColor: '#7a431d', paddingVertical: 12, paddingHorizontal: 36, borderRadius: 2, marginBottom: 8 }}>
+                        <Text style={{ color: '#ffffff', fontSize: 26, fontWeight: '800', letterSpacing: 2 }}>
+                          {(user?.shopName || 'SHOP RECEIPT').toUpperCase()}
                         </Text>
                       </View>
+                    )}
+                    <Text style={{ fontSize: 12, color: '#475569', textAlign: 'center', lineHeight: 16 }}>
+                      {printLayout.address}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: '#475569', textAlign: 'center', marginTop: 2 }}>
+                      {printLayout.gmail || user?.email || 'contact@lumina.com'}
+                    </Text>
+                  </View>
+
+                  <View style={{ borderTopWidth: 1.5, borderColor: '#ebdcd0', marginVertical: 15 }} />
+
+                  {/* Customer and Invoice Metadata Section */}
+                  <View style={{ flexDirection: 'row', marginBottom: 25 }}>
+                    {/* Left: To Customer */}
+                    <View style={{ flex: 1.1, paddingRight: 10 }}>
+                      <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 4, fontWeight: 'bold' }}>To,</Text>
+                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a' }}>{newInvoice?.customer_name}</Text>
+                      {newInvoice?.customer_phone ? (
+                        <Text style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>{newInvoice.customer_phone}</Text>
+                      ) : null}
                     </View>
 
-                    <View style={styles.receiptMetaRow}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.receiptMetaLabel, { color: theme.colors.onSurface + '99' }]}>Customer:</Text>
-                        <Text style={[styles.receiptMetaVal, { color: theme.colors.onSurface }]}>{newInvoice?.customer_name}</Text>
-                        {newInvoice?.customer_phone ? (
-                          <Text style={[styles.receiptMetaVal, { color: theme.colors.onSurface }]}>{newInvoice.customer_phone}</Text>
-                        ) : null}
+                    {/* Right: Invoice Meta Details Table */}
+                    <View style={{ flex: 0.9, borderLeftWidth: 1.5, borderColor: '#ebdcd0', paddingLeft: 20 }}>
+                      <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Invoice No</Text>
+                        <Text style={{ fontSize: 12, color: '#0f172a', fontWeight: 'bold', flex: 1 }}>: {newInvoice?.invoice_number}</Text>
                       </View>
-                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <Text style={[styles.receiptMetaLabel, { color: theme.colors.onSurface + '99' }]}>Payment Method:</Text>
-                        <Text style={[styles.receiptMetaVal, { color: theme.colors.onSurface }]}>{newInvoice?.payment_method}</Text>
+                      <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Invoice Dt</Text>
+                        <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }}>: {getInvoiceDateStr(newInvoice?.created_at)}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Time</Text>
+                        <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }}>: {getInvoiceTimeStr(newInvoice?.created_at)}</Text>
                       </View>
                     </View>
+                  </View>
 
-                    <Divider style={styles.dashedDivider} />
+                  {/* Items Table Header */}
+                  <View style={{ flexDirection: 'row', backgroundColor: '#7a431d', paddingVertical: 10, paddingHorizontal: 8, borderTopLeftRadius: 2, borderTopRightRadius: 2, borderWidth: 1, borderColor: '#7a431d' }}>
+                    <Text style={{ flex: 0.6, color: '#ffffff', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Sr.</Text>
+                    <Text style={{ flex: 3, color: '#ffffff', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase' }}>Description</Text>
+                    <Text style={{ flex: 1, color: '#ffffff', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'center' }}>Qty</Text>
+                    <Text style={{ flex: 1.8, color: '#ffffff', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'right' }}>Rate</Text>
+                    <Text style={{ flex: 2, color: '#ffffff', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', textAlign: 'right' }}>Total</Text>
+                  </View>
 
-                    <Text style={[styles.receiptSectionTitle, { color: theme.colors.onSurface }]}>Items Purchased</Text>
+                  {/* Items Table Rows */}
+                  <View style={{ borderWidth: 1, borderTopWidth: 0, borderColor: '#ebdcd0' }}>
                     {newInvoice?.items?.map((item, idx) => (
-                      <View key={idx} style={styles.receiptItemRow}>
-                        <View style={{ flex: 2 }}>
-                          <Text style={[styles.receiptItemName, { color: theme.colors.onSurface }]}>{item.name}</Text>
+                      <View key={idx} style={{ flexDirection: 'row', paddingVertical: 10, paddingHorizontal: 8, borderBottomWidth: idx === newInvoice.items.length - 1 ? 0 : 1, borderColor: '#ebdcd0', alignItems: 'center' }}>
+                        <Text style={{ flex: 0.6, fontSize: 12, color: '#1e293b', textAlign: 'center' }}>{idx + 1}</Text>
+                        <View style={{ flex: 3 }}>
+                          <Text style={{ fontSize: 13, fontWeight: 'bold', color: '#0f172a' }}>{item.name}</Text>
+                          {item.brand || item.description ? (
+                            <Text style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', marginTop: 2 }}>
+                              {item.brand ? item.brand : ''}{item.brand && item.description ? ' - ' : ''}{item.description ? item.description : ''}
+                            </Text>
+                          ) : null}
                         </View>
-                        <View style={{ flex: 1.5, alignItems: 'center' }}>
-                          <Text style={[styles.receiptItemDetail, { color: theme.colors.onSurface + 'b3' }]}>{item.quantity} x ₹{item.price.toFixed(2)}</Text>
-                        </View>
-                        <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                          <Text style={[styles.receiptItemTotal, { color: theme.colors.onSurface }]}>₹{item.total.toFixed(2)}</Text>
-                        </View>
+                        <Text style={{ flex: 1, fontSize: 12, color: '#1e293b', textAlign: 'center' }}>{item.quantity}</Text>
+                        <Text style={{ flex: 1.8, fontSize: 12, color: '#1e293b', textAlign: 'right' }}>₹{Number(item.price || 0).toFixed(2)}</Text>
+                        <Text style={{ flex: 2, fontSize: 13, fontWeight: 'bold', color: '#0f172a', textAlign: 'right' }}>₹{Number(item.total || 0).toFixed(2)}</Text>
                       </View>
                     ))}
+                  </View>
 
-                    <Divider style={styles.dashedDivider} />
+                  <View style={{ borderStyle: 'dashed', borderTopWidth: 1.5, borderColor: '#7a431d', marginVertical: 20 }} />
 
-                    <View style={styles.receiptTotalRow}>
-                      <Text style={[styles.receiptTotalLabel, { color: theme.colors.onSurface + 'b3' }]}>Subtotal</Text>
-                      <Text style={[styles.receiptTotalVal, { color: theme.colors.onSurface }]}>₹{newInvoice?.subtotal?.toFixed(2)}</Text>
+                  {/* Footer / Summary Section */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    {/* Left Column: Socials, GSTIN, and Footer Msg */}
+                    <View style={{ flex: 1.1, paddingRight: 10 }}>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 }}>
+                        {printLayout.contactNumber || user?.phone ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15, marginBottom: 5 }}>
+                            <Text style={{ fontSize: 11, color: '#475569', fontWeight: '600' }}>📞 {printLayout.contactNumber || user?.phone}</Text>
+                          </View>
+                        ) : null}
+                        {printLayout.instagram ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15, marginBottom: 5 }}>
+                            <Text style={{ fontSize: 11, color: '#475569', fontWeight: '600' }}>📷 {printLayout.instagram}</Text>
+                          </View>
+                        ) : null}
+                        {printLayout.gmail || user?.email ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 15, marginBottom: 5 }}>
+                            <Text style={{ fontSize: 11, color: '#475569', fontWeight: '600' }}>✉️ {printLayout.gmail || user?.email}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {printLayout.gstin ? (
+                        <Text style={{ fontSize: 11, color: '#64748b', fontWeight: 'bold', letterSpacing: 0.5, marginBottom: 15 }}>GSTIN: {printLayout.gstin}</Text>
+                      ) : null}
+                      {printLayout.footerMsg ? (
+                        <Text style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', lineHeight: 14, textAlign: 'left' }}>
+                          {printLayout.footerMsg}
+                        </Text>
+                      ) : null}
                     </View>
 
-                    {newInvoice?.discount > 0 && (
-                      <View style={styles.receiptTotalRow}>
-                        <Text style={[styles.receiptTotalLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount ({getInvoiceDiscountPercent(newInvoice).toFixed(2)}%)</Text>
-                        <Text style={[styles.receiptTotalVal, { color: '#ef4444' }]}>-₹{newInvoice?.discount?.toFixed(2)}</Text>
+                    {/* Right Column: Totals Summary & Sign */}
+                    <View style={{ flex: 0.9, alignItems: 'flex-end' }}>
+                      <View style={{ width: '100%', maxWidth: 260 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                          <Text style={{ fontSize: 13, color: '#475569' }}>Subtotal</Text>
+                          <Text style={{ fontSize: 13, color: '#0f172a', fontWeight: '500' }}>₹{Number(newInvoice?.subtotal || 0).toFixed(2)}</Text>
+                        </View>
+                        {newInvoice?.discount > 0 ? (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 13, color: '#475569' }}>Discount ({getInvoiceDiscountPercent(newInvoice).toFixed(2)}%)</Text>
+                            <Text style={{ fontSize: 13, color: '#dc2626', fontWeight: '500' }}>-₹{Number(newInvoice?.discount || 0).toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        {newInvoice?.tax > 0 ? (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
+                            <Text style={{ fontSize: 13, color: '#475569' }}>Tax ({newInvoice?.tax_type})</Text>
+                            <Text style={{ fontSize: 13, color: '#0f172a', fontWeight: '500' }}>+₹{Number(newInvoice?.tax || 0).toFixed(2)}</Text>
+                          </View>
+                        ) : null}
+                        
+                        <View style={{ borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: '#7a431d', paddingVertical: 6, marginVertical: 6, flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#7a431d' }}>TOTAL</Text>
+                          <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#7a431d' }}>₹{Number(newInvoice?.total || 0).toFixed(2)}</Text>
+                        </View>
                       </View>
-                    )}
 
-                    {newInvoice?.tax > 0 && (
-                      <View style={styles.receiptTotalRow}>
-                        <Text style={[styles.receiptTotalLabel, { color: theme.colors.onSurface + 'b3' }]}>Tax ({newInvoice?.tax_type})</Text>
-                        <Text style={[styles.receiptTotalVal, { color: theme.colors.onSurface }]}>+₹{newInvoice?.tax?.toFixed(2)}</Text>
-                      </View>
-                    )}
-
-                    <Divider style={{ marginVertical: 8, backgroundColor: theme.colors.outlineVariant }} />
-
-                    <View style={styles.receiptGrandRow}>
-                      <Text style={[styles.receiptGrandLabel, { color: theme.colors.onSurface }]}>GRAND TOTAL</Text>
-                      <Text style={[styles.receiptGrandVal, { color: theme.colors.onSurface }]}>₹{newInvoice?.total?.toFixed(2)}</Text>
+                      {printLayout.showSign ? (
+                        <View style={{ marginTop: 25, alignItems: 'center', width: 140 }}>
+                          <View style={{ width: '100%', borderTopWidth: 1, borderColor: '#7a431d', marginBottom: 4 }} />
+                          <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#7a431d', letterSpacing: 1 }}>SIGN</Text>
+                        </View>
+                      ) : null}
                     </View>
-                  </Card.Content>
-                </Card>
-              </ScrollView>
+                  </View>
+                </View>
+            </ScrollView>
 
               <View style={[styles.previewFooter, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outlineVariant }]}>
                 <View style={styles.footerActionRow}>
                   <Button
                     mode="contained"
                     buttonColor="#25d366"
-                    onPress={handleSharePdf}
+                    onPress={handleSendBillPress}
                     style={[styles.footerActionBtn, { flex: 1, marginRight: 8 }]}
                     icon="whatsapp"
                     textColor="#fff"

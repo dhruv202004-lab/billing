@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, StyleSheet, ScrollView, Alert, Switch, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert, Switch, TouchableOpacity, Image } from 'react-native';
 import { Text, Button, Card, Divider, Portal, Dialog, TextInput, List, SegmentedButtons, useTheme } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
 import { AuthContext } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { syncService } from '../services/syncService';
@@ -32,6 +33,16 @@ export default function SyncScreen() {
   const [businessAddress, setBusinessAddress] = useState('123 Silicon Valley Road, Bangalore - 560001');
   const [businessState, setBusinessState] = useState('Karnataka');
   const [businessCountry, setBusinessCountry] = useState('India');
+
+  // Print Layout Edit States
+  const [printLayoutDialogVisible, setPrintLayoutDialogVisible] = useState(false);
+  const [layoutHeaderSub, setLayoutHeaderSub] = useState('Invoice / Bill Summary');
+  const [layoutFooterMsg, setLayoutFooterMsg] = useState('Thank you for your business!');
+  const [layoutShowSign, setLayoutShowSign] = useState(true);
+  const [layoutInstagram, setLayoutInstagram] = useState('');
+  const [layoutGmail, setLayoutGmail] = useState('');
+  const [layoutContactNumber, setLayoutContactNumber] = useState('');
+  const [layoutLogoImage, setLayoutLogoImage] = useState(null);
 
   // GST & Tax Edit States
   const [gstTaxDialogVisible, setGstTaxDialogVisible] = useState(false);
@@ -89,6 +100,27 @@ export default function SyncScreen() {
 
         const savedCountry = await AsyncStorage.getItem('settings_business_country');
         if (savedCountry) setBusinessCountry(savedCountry);
+
+        const savedHeaderSub = await AsyncStorage.getItem('settings_layout_header_sub');
+        if (savedHeaderSub) setLayoutHeaderSub(savedHeaderSub);
+
+        const savedFooterMsg = await AsyncStorage.getItem('settings_layout_footer_msg');
+        if (savedFooterMsg) setLayoutFooterMsg(savedFooterMsg);
+
+        const savedShowSign = await AsyncStorage.getItem('settings_layout_show_sign');
+        if (savedShowSign) setLayoutShowSign(savedShowSign === 'true');
+
+        const savedInstagram = await AsyncStorage.getItem('settings_layout_instagram');
+        if (savedInstagram) setLayoutInstagram(savedInstagram);
+
+        const savedGmail = await AsyncStorage.getItem('settings_layout_gmail');
+        if (savedGmail) setLayoutGmail(savedGmail);
+
+        const savedContact = await AsyncStorage.getItem('settings_layout_contact_number');
+        if (savedContact) setLayoutContactNumber(savedContact);
+
+        const savedLogo = await AsyncStorage.getItem('settings_layout_logo_image');
+        if (savedLogo) setLayoutLogoImage(savedLogo);
 
         const savedStdTax = await AsyncStorage.getItem('settings_standard_tax');
         if (savedStdTax) setStandardTaxRate(savedStdTax);
@@ -177,6 +209,50 @@ export default function SyncScreen() {
     await saveSetting('settings_business_country', businessCountry);
     setBusinessDetailsDialogVisible(false);
     Alert.alert('Success', 'Business details updated.');
+  };
+
+  const handlePrintLayoutSave = async () => {
+    await saveSetting('settings_layout_header_sub', layoutHeaderSub);
+    await saveSetting('settings_layout_footer_msg', layoutFooterMsg);
+    await saveSetting('settings_layout_show_sign', String(layoutShowSign));
+    await saveSetting('settings_business_address', businessAddress);
+    await saveSetting('settings_gstin', gstin);
+    await saveSetting('settings_layout_instagram', layoutInstagram);
+    await saveSetting('settings_layout_gmail', layoutGmail);
+    await saveSetting('settings_layout_contact_number', layoutContactNumber);
+    if (layoutLogoImage) {
+      await saveSetting('settings_layout_logo_image', layoutLogoImage);
+    } else {
+      await AsyncStorage.removeItem('settings_layout_logo_image');
+    }
+    setPrintLayoutDialogVisible(false);
+    Alert.alert('Success', 'Bill print layout details updated.');
+  };
+
+  const pickLogoImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Please grant photo gallery access to pick a logo image.');
+        return;
+      }
+
+      let result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [3, 1],
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        setLayoutLogoImage(base64Img);
+      }
+    } catch (err) {
+      console.error('Error picking logo:', err);
+      Alert.alert('Image Error', 'Failed to pick logo image.');
+    }
   };
 
   const handleGstTaxSave = async () => {
@@ -364,6 +440,14 @@ export default function SyncScreen() {
                   description="Validate refund rules and return margins"
                   descriptionStyle={{ color: theme.colors.onSurface + 'b3' }}
                   onPress={() => showGeneralDialog('return_refund', 'Return & Refund Policies', 'Enable invoice returns up to 14 days post-generation. Refunds credit back to customer ledger balances.')}
+                />
+                <List.Item
+                  title="Bill Print Layout Details"
+                  titleStyle={{ color: theme.colors.onSurface, fontWeight: 'bold' }}
+                  description="Customize header subtitle, address, GSTIN, and footer message"
+                  descriptionStyle={{ color: theme.colors.onSurface + 'b3' }}
+                  left={props => <List.Icon {...props} icon="file-document-edit-outline" color={theme.colors.primary} />}
+                  onPress={() => setPrintLayoutDialogVisible(true)}
                 />
               </View>
             </List.Accordion>
@@ -711,6 +795,112 @@ export default function SyncScreen() {
           <Dialog.Actions>
             <Button onPress={() => setBusinessDetailsDialogVisible(false)}>Cancel</Button>
             <Button onPress={handleBusinessDetailsSave}>Save</Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
+
+      {/* DIALOG: Edit Print Layout Details */}
+      <Portal>
+        <Dialog visible={printLayoutDialogVisible} onDismiss={() => setPrintLayoutDialogVisible(false)}>
+          <Dialog.Title>Edit Bill Print Layout Details</Dialog.Title>
+          <ScrollView style={{ maxHeight: 400 }}>
+            <Dialog.Content>
+              <Text style={{ fontSize: 13, fontWeight: 'bold', color: theme.colors.onSurface, marginBottom: 5 }}>Logo Image</Text>
+              {layoutLogoImage ? (
+                <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                  <Image source={{ uri: layoutLogoImage }} style={{ width: 150, height: 50, resizeMode: 'contain', borderWidth: 1, borderColor: theme.colors.outlineVariant, borderRadius: 8, padding: 4 }} />
+                  <Button mode="text" textColor="#ef4444" onPress={() => setLayoutLogoImage(null)} style={{ marginTop: 2 }}>
+                    Remove Logo
+                  </Button>
+                </View>
+              ) : (
+                <Button mode="outlined" icon="image" onPress={pickLogoImage} style={{ marginBottom: 10 }}>
+                  Upload Logo Image
+                </Button>
+              )}
+
+              <TextInput
+                label="Header Subtitle / Slogan"
+                value={layoutHeaderSub}
+                onChangeText={setLayoutHeaderSub}
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+              />
+              <TextInput
+                label="GSTIN Number"
+                value={gstin}
+                onChangeText={setGstin}
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+              />
+              <TextInput
+                label="Business Address"
+                value={businessAddress}
+                onChangeText={setBusinessAddress}
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+                multiline
+                numberOfLines={2}
+              />
+              <TextInput
+                label="Instagram Handle"
+                value={layoutInstagram}
+                onChangeText={setLayoutInstagram}
+                placeholder="@my_shop"
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+                left={<TextInput.Icon icon="instagram" />}
+              />
+              <TextInput
+                label="Email (Gmail)"
+                value={layoutGmail}
+                onChangeText={setLayoutGmail}
+                placeholder="shop@gmail.com"
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+                keyboardType="email-address"
+                left={<TextInput.Icon icon="email-outline" />}
+              />
+              <TextInput
+                label="Contact Number"
+                value={layoutContactNumber}
+                onChangeText={setLayoutContactNumber}
+                placeholder="+91 98765 43210"
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+                keyboardType="phone-pad"
+                left={<TextInput.Icon icon="phone-outline" />}
+              />
+              <TextInput
+                label="Footer Message / Terms"
+                value={layoutFooterMsg}
+                onChangeText={setLayoutFooterMsg}
+                mode="outlined"
+                style={{ marginBottom: 10 }}
+                activeOutlineColor="#5a4bda"
+                multiline
+                numberOfLines={2}
+              />
+              <View style={[styles.switchRow, { paddingHorizontal: 0, marginTop: 5 }]}>
+                <Text style={[styles.switchLabel, { color: theme.colors.onSurface }]}>Show signature line in footer</Text>
+                <Switch
+                  value={layoutShowSign}
+                  onValueChange={setLayoutShowSign}
+                  thumbColor={layoutShowSign ? theme.colors.primary : '#f4f3f4'}
+                  trackColor={{ false: '#767577', true: '#cbbff8' }}
+                />
+              </View>
+            </Dialog.Content>
+          </ScrollView>
+          <Dialog.Actions>
+            <Button onPress={() => setPrintLayoutDialogVisible(false)}>Cancel</Button>
+            <Button onPress={handlePrintLayoutSave}>Save Details</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>

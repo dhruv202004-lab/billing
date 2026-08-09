@@ -3,6 +3,7 @@ import { dbService } from './dbService';
 import api from '../config/api';
 import * as Network from 'expo-network';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { safeJsonParse } from '../utils/safeJson';
 
 const AUTO_SYNC_KEY = 'settings_auto_sync';
 let activeSyncPromise = null;
@@ -41,7 +42,7 @@ export const syncService = {
 
     for (let item of queue) {
       const { id: queueId, action, table_name: tableName, local_id: localId, data_json: dataJson } = item;
-      const data = JSON.parse(dataJson);
+      const data = safeJsonParse(dataJson, {});
 
       try {
         if (tableName === 'products') {

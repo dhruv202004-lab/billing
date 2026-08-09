@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { AuthContext } from '../context/AuthContext';
 import { dbService } from '../services/dbService';
 import { syncService } from '../services/syncService';
+import { safeJsonParse } from '../utils/safeJson';
 
 export default function InventoryScreen() {
   const { user } = useContext(AuthContext);
@@ -160,7 +161,7 @@ export default function InventoryScreen() {
     let otherList = [];
     if (product.other_details) {
       try {
-        const parsed = typeof product.other_details === 'string' ? JSON.parse(product.other_details) : product.other_details;
+        const parsed = safeJsonParse(product.other_details, {});
         otherList = Object.keys(parsed).map(key => ({ key, value: parsed[key] }));
       } catch (err) {
         console.error('Error parsing other_details:', err);

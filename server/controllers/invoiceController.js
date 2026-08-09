@@ -14,6 +14,7 @@ exports.getInvoices = async (req, res) => {
     const invoices = await Invoice.find(query).sort({ createdAt: -1 });
     res.json(invoices);
   } catch (error) {
+    console.error('getInvoices error:', error);
     res.status(500).json({ message: error.message || 'Error fetching invoices' });
   }
 };
@@ -108,6 +109,7 @@ exports.upsertInvoices = async (req, res) => {
 
     res.status(201).json(Array.isArray(req.body) ? results : results[0]);
   } catch (error) {
+    console.error('upsertInvoices error:', error);
     res.status(500).json({ message: error.message || 'Error upserting invoices' });
   }
 };
@@ -123,6 +125,7 @@ exports.deleteInvoice = async (req, res) => {
 
     res.json({ message: 'Invoice deleted successfully', id: req.params.id });
   } catch (error) {
+    console.error('deleteInvoice error:', error);
     res.status(500).json({ message: error.message || 'Error deleting invoice' });
   }
 };

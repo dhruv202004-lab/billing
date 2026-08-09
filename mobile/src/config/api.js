@@ -4,15 +4,24 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const getBaseUrl = () => {
-  // Automatically detect the host IP address in development mode
-  const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.hostUri;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    return `http://${ip}:5000`;
+  const configuredBaseUrl =
+    process.env.EXPO_PUBLIC_API_BASE_URL || Constants.expoConfig?.extra?.apiBaseUrl;
+
+  if (configuredBaseUrl) {
+    return configuredBaseUrl.replace(/\/+$/, '');
   }
+
+  const hostUri = Constants.expoConfig?.hostUri || Constants.manifest?.hostUri;
+
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    return `http://${host}:5000`;
+  }
+
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:5000';
   }
+
   return 'http://localhost:5000';
 };
 

@@ -13,6 +13,7 @@ exports.getCustomers = async (req, res) => {
     const customers = await Customer.find(query);
     res.json(customers);
   } catch (error) {
+    console.error('getCustomers error:', error);
     res.status(500).json({ message: error.message || 'Error fetching customers' });
   }
 };
@@ -50,6 +51,7 @@ exports.upsertCustomers = async (req, res) => {
 
     res.status(201).json(Array.isArray(req.body) ? results : results[0]);
   } catch (error) {
+    console.error('upsertCustomers error:', error);
     res.status(500).json({ message: error.message || 'Error upserting customers' });
   }
 };
@@ -70,6 +72,7 @@ exports.updateCustomer = async (req, res) => {
 
     res.json(customer);
   } catch (error) {
+    console.error('updateCustomer error:', error);
     res.status(500).json({ message: error.message || 'Error updating customer' });
   }
 };
@@ -85,6 +88,7 @@ exports.deleteCustomer = async (req, res) => {
 
     res.json({ message: 'Customer deleted successfully', id: req.params.id });
   } catch (error) {
+    console.error('deleteCustomer error:', error);
     res.status(500).json({ message: error.message || 'Error deleting customer' });
   }
 };

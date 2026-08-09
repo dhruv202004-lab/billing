@@ -12,7 +12,7 @@ export const thermalPrintService = {
     CUT: '\x1d\x56\x00',
   },
 
-  formatInvoice: (shopName, invoice, items) => {
+  formatInvoice: (shopName, invoice, items, layoutDetails = {}) => {
     const C = thermalPrintService.CMD;
     let p = '';
     const subtotal = Number(invoice.subtotal) || 0;
@@ -22,10 +22,33 @@ export const thermalPrintService = {
     ) || 0;
     const taxType = invoice.tax_type || invoice.taxType;
 
+    const headerSub = layoutDetails.headerSub || 'SALES RECEIPT';
+    const footerMsg = layoutDetails.footerMsg || 'Thank you for shopping!';
+    const address = layoutDetails.address;
+    const gstin = layoutDetails.gstin;
+    const instagram = layoutDetails.instagram;
+    const gmail = layoutDetails.gmail;
+    const contactNumber = layoutDetails.contactNumber;
+
     p += C.INIT;
 
     p += C.ALIGN_CENTER + C.TEXT_DOUBLE + C.BOLD_ON + shopName + C.LINE_FEED;
-    p += C.TEXT_NORMAL + C.BOLD_OFF + 'SALES RECEIPT' + C.LINE_FEED;
+    if (address) {
+      p += C.TEXT_NORMAL + C.BOLD_OFF + address + C.LINE_FEED;
+    }
+    if (gstin) {
+      p += C.TEXT_NORMAL + C.BOLD_OFF + `GSTIN: ${gstin}` + C.LINE_FEED;
+    }
+    if (contactNumber) {
+      p += C.TEXT_NORMAL + C.BOLD_OFF + `Phone: ${contactNumber}` + C.LINE_FEED;
+    }
+    if (gmail) {
+      p += C.TEXT_NORMAL + C.BOLD_OFF + `Email: ${gmail}` + C.LINE_FEED;
+    }
+    if (instagram) {
+      p += C.TEXT_NORMAL + C.BOLD_OFF + `Instagram: ${instagram}` + C.LINE_FEED;
+    }
+    p += C.TEXT_NORMAL + C.BOLD_OFF + headerSub + C.LINE_FEED;
     p += '--------------------------------' + C.LINE_FEED;
 
     p += C.ALIGN_LEFT;
@@ -63,7 +86,7 @@ export const thermalPrintService = {
     p += '--------------------------------' + C.LINE_FEED;
 
     p += C.ALIGN_CENTER;
-    p += 'Thank you for shopping!' + C.LINE_FEED;
+    p += footerMsg + C.LINE_FEED;
     p += 'Software Powered by Offline POS' + C.LINE_FEED;
     p += C.LINE_FEED + C.LINE_FEED + C.LINE_FEED;
 
