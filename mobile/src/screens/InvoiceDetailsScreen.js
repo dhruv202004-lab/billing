@@ -136,12 +136,10 @@ export default function InvoiceDetailsScreen({ route }) {
               <Text style={styles.label}>Subtotal</Text>
               <Text style={styles.subvalue}>Rs {subtotal.toFixed(2)}</Text>
             </View>
-            {discountAmount > 0 && (
-              <View style={styles.row}>
-                <Text style={styles.label}>Discount ({discountPercent.toFixed(2)}%)</Text>
-                <Text style={styles.discount}>-Rs {discountAmount.toFixed(2)}</Text>
-              </View>
-            )}
+            <View style={styles.row}>
+              <Text style={styles.label}>Discount ({discountPercent.toFixed(2)}%)</Text>
+              <Text style={styles.discount}>-Rs {discountAmount.toFixed(2)}</Text>
+            </View>
             {Number(invoice.tax) > 0 && (
               <View style={styles.row}>
                 <Text style={styles.label}>Tax</Text>

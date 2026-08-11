@@ -73,9 +73,7 @@ export const thermalPrintService = {
 
     p += C.ALIGN_RIGHT;
     p += `Subtotal: ₹${subtotal.toFixed(2)}` + C.LINE_FEED;
-    if (discountAmount > 0) {
-      p += `Discount(${discountPercent.toFixed(2)}%): -₹${discountAmount.toFixed(2)}` + C.LINE_FEED;
-    }
+    p += `Discount(${discountPercent.toFixed(2)}%): -₹${discountAmount.toFixed(2)}` + C.LINE_FEED;
     if (taxType && taxType !== 'None') {
       p += `${taxType} Tax: +₹${Number(invoice.tax).toFixed(2)}` + C.LINE_FEED;
       if (invoice.cgst > 0) p += `  CGST: +₹${Number(invoice.cgst).toFixed(2)}` + C.LINE_FEED;

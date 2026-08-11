@@ -885,7 +885,7 @@ Thank you for your business!`;
               </>
             )}
 
-            {discountAmt > 0 && (
+            {discountAmt >= 0 && (
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: theme.colors.onSurface + 'b3' }]}>Discount ({discountPercent.toFixed(2)}%)</Text>
                 <Text style={[styles.summaryVal, { color: 'red' }]}>-₹{discountAmt.toFixed(2)}</Text>
@@ -1110,27 +1110,27 @@ Thank you for your business!`;
                   {/* Customer and Invoice Metadata Section */}
                   <View style={{ flexDirection: 'row', marginBottom: 25 }}>
                     {/* Left: To Customer */}
-                    <View style={{ flex: 1.1, paddingRight: 10 }}>
+                    <View style={{ flex: 1.0, paddingRight: 8 }}>
                       <Text style={{ fontSize: 12, color: '#64748b', marginBottom: 4, fontWeight: 'bold' }}>To,</Text>
-                      <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#0f172a' }}>{newInvoice?.customer_name}</Text>
+                      <Text style={{ fontSize: 15, fontWeight: 'bold', color: '#0f172a' }}>{newInvoice?.customer_name}</Text>
                       {newInvoice?.customer_phone ? (
-                        <Text style={{ fontSize: 13, color: '#475569', marginTop: 4 }}>{newInvoice.customer_phone}</Text>
+                        <Text style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{newInvoice.customer_phone}</Text>
                       ) : null}
                     </View>
 
                     {/* Right: Invoice Meta Details Table */}
-                    <View style={{ flex: 0.9, borderLeftWidth: 1.5, borderColor: '#ebdcd0', paddingLeft: 20 }}>
+                    <View style={{ flex: 1.4, borderLeftWidth: 1.5, borderColor: '#ebdcd0', paddingLeft: 12 }}>
                       <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Invoice No</Text>
-                        <Text style={{ fontSize: 12, color: '#0f172a', fontWeight: 'bold', flex: 1 }}>: {newInvoice?.invoice_number}</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', width: 70 }}>Invoice No</Text>
+                        <Text style={{ fontSize: 11, color: '#0f172a', fontWeight: 'bold', flex: 1 }}>: {newInvoice?.invoice_number}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Invoice Dt</Text>
-                        <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }}>: {getInvoiceDateStr(newInvoice?.created_at)}</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', width: 70 }}>Invoice Dt</Text>
+                        <Text style={{ fontSize: 11, color: '#0f172a', flex: 1 }}>: {getInvoiceDateStr(newInvoice?.created_at)}</Text>
                       </View>
                       <View style={{ flexDirection: 'row', paddingVertical: 3 }}>
-                        <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', width: 80 }}>Time</Text>
-                        <Text style={{ fontSize: 12, color: '#0f172a', flex: 1 }}>: {getInvoiceTimeStr(newInvoice?.created_at)}</Text>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: '#64748b', width: 70 }}>Time</Text>
+                        <Text style={{ fontSize: 11, color: '#0f172a', flex: 1 }}>: {getInvoiceTimeStr(newInvoice?.created_at)}</Text>
                       </View>
                     </View>
                   </View>
@@ -1204,7 +1204,7 @@ Thank you for your business!`;
                           <Text style={{ fontSize: 13, color: '#475569' }}>Subtotal</Text>
                           <Text style={{ fontSize: 13, color: '#0f172a', fontWeight: '500' }}>₹{Number(newInvoice?.subtotal || 0).toFixed(2)}</Text>
                         </View>
-                        {newInvoice?.discount > 0 ? (
+                        {newInvoice?.discount !== undefined ? (
                           <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }}>
                             <Text style={{ fontSize: 13, color: '#475569' }}>Discount ({getInvoiceDiscountPercent(newInvoice).toFixed(2)}%)</Text>
                             <Text style={{ fontSize: 13, color: '#dc2626', fontWeight: '500' }}>-₹{Number(newInvoice?.discount || 0).toFixed(2)}</Text>

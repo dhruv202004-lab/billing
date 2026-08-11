@@ -368,11 +368,10 @@ export const pdfService = {
                   <td style="text-align: left; color: #475569;">Subtotal</td>
                   <td style="text-align: right; color: #0f172a;">${formatCurrency(subtotal)}</td>
                 </tr>
-                ${discountAmount > 0 ? `
                 <tr>
                   <td style="text-align: left; color: #475569;">Discount (${discountPercent.toFixed(2)}%)</td>
                   <td style="text-align: right; color: #dc2626;">-${formatCurrency(discountAmount)}</td>
-                </tr>` : ''}
+                </tr>
                 ${taxAmount > 0 ? `
                 <tr>
                   <td style="text-align: left; color: #475569;">Tax (${taxLabel})</td>
