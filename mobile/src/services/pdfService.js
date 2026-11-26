@@ -1,6 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import { getDB } from '../database/sqlite';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -395,7 +395,7 @@ export const pdfService = {
     `;
   },
 
-  shareInvoicePdf: async (shopName, invoice, items, userDetails = {}) => {
+  createInvoicePdf: async (shopName, invoice, items, userDetails = {}) => {
     try {
       let customerPhone = invoice.customer_phone || '';
       if (!customerPhone && invoice.customer_id) {
@@ -447,50 +447,41 @@ export const pdfService = {
         logoImage
       });
 
-      const { uri } = await Print.printToFileAsync({
+      const { base64 } = await Print.printToFileAsync({
         html: htmlContent,
+        base64: true,
       });
 
-      let sourceUri = uri || '';
-      if (sourceUri) {
-        if (!sourceUri.startsWith('file://')) {
-          if (sourceUri.startsWith('file:')) {
-            sourceUri = 'file:///' + sourceUri.substring(5).replace(/^\/+/, '');
-          } else {
-            sourceUri = 'file:///' + sourceUri.replace(/^\/+/, '');
-          }
-        } else if (sourceUri.startsWith('file://') && !sourceUri.startsWith('file:///')) {
-          sourceUri = 'file:///' + sourceUri.substring(7).replace(/^\/+/, '');
-        }
+      if (!base64) {
+        throw new Error('PDF generation did not return file data.');
       }
 
-      let shareUri = sourceUri;
-      try {
-        if (FileSystem && FileSystem.cacheDirectory) {
-          const cleanFileName = `Invoice_${invoice.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
-          const targetUri = FileSystem.cacheDirectory + cleanFileName;
-          await FileSystem.copyAsync({
-            from: sourceUri,
-            to: targetUri,
-          });
-          shareUri = targetUri;
-        }
-      } catch (copyErr) {
-        console.log('Failed to copy PDF to cache directory, using original URI:', copyErr);
+      const invoiceNumber = String(invoice.invoice_number || 'receipt').replace(/[^a-zA-Z0-9_-]/g, '');
+      const pdfFile = new File(Paths.cache, `Invoice_${invoiceNumber}.pdf`);
+      pdfFile.create({ overwrite: true });
+      pdfFile.write(base64, { encoding: 'base64' });
+
+      if (!pdfFile.exists || pdfFile.size === 0) {
+        throw new Error('Generated PDF could not be saved for sharing.');
       }
 
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(shareUri, {
-          mimeType: 'application/pdf',
-          dialogTitle: `Invoice_${invoice.invoice_number}`,
-          UTI: 'com.adobe.pdf',
-        });
-      } else {
-        console.warn('Sharing is not available on this platform');
-      }
+      return pdfFile.uri;
     } catch (error) {
-      console.error('Error generating/sharing PDF:', error);
+      console.error('Error generating invoice PDF:', error);
       throw error;
     }
+  },
+
+  shareInvoicePdf: async (shopName, invoice, items, userDetails = {}) => {
+    const uri = await pdfService.createInvoicePdf(shopName, invoice, items, userDetails);
+    if (!(await Sharing.isAvailableAsync())) {
+      throw new Error('PDF sharing is not available on this device.');
+    }
+
+    await Sharing.shareAsync(uri, {
+      mimeType: 'application/pdf',
+      dialogTitle: `Invoice_${invoice.invoice_number}`,
+      UTI: 'com.adobe.pdf',
+    });
   },
 };

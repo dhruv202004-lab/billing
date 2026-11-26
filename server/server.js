@@ -7,9 +7,6 @@ const productRoutes = require('./routes/products');
 const customerRoutes = require('./routes/customers');
 const invoiceRoutes = require('./routes/invoices');
 
-// Connect to Database
-connectDB();
-
 const app = express();
 
 // Middleware
@@ -36,6 +33,21 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+const startServer = async () => {
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI must be configured before starting the server.');
+  }
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET must be configured before starting the server.');
+  }
+
+  await connectDB();
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error('Server startup failed:', error.message);
+  process.exit(1);
 });

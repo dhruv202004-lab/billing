@@ -473,7 +473,8 @@ Thank you for your business!`;
   };
 
   const handleSendBillPress = async () => {
-    if (!newInvoice || !receiptRef.current) return;
+    if (!newInvoice || isSharing) return;
+    setIsSharing(true);
     try {
       const cleanPhone = (newInvoice.customer_phone || '').replace(/[^0-9]/g, '');
       if (!cleanPhone) {
@@ -481,95 +482,42 @@ Thank you for your business!`;
         return;
       }
 
-      // Check if RNShare native module is available
+      const pdfUri = await pdfService.createInvoicePdf(
+        user?.shopName || 'SHOP',
+        newInvoice,
+        newInvoice.items,
+        user
+      );
+      const fileName = `Invoice_${String(newInvoice.invoice_number).replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
+
+      // Expo Go does not include react-native-share, so use the system PDF share sheet there.
       const { NativeModules } = require('react-native');
-      const isShareSingleAvailable = !!NativeModules.RNShare;
-
-      // 1. Capture receipt image view screenshot
-      const uri = await captureRef(receiptRef, {
-        format: 'png',
-        quality: 0.8,
-      });
-
-      if (!isShareSingleAvailable) {
-        // Fallback for Expo Go: Use expo-sharing to share the captured bill image
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(uri, {
-            mimeType: 'image/png',
-            dialogTitle: `Invoice_${newInvoice.invoice_number}`,
-            UTI: 'public.png',
-          });
-        } else {
-          // If sharing is not available at all, fallback to SMS/WhatsApp text link
-          const itemsText = newInvoice.items.map(item => `- ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)})`).join('\n');
-          const receiptMsg = `*INVOICE FROM ${user?.shopName || 'SHOP'}*
-----------------------------------------
-*Invoice No:* ${newInvoice.invoice_number}
-*Customer:* ${newInvoice.customer_name}
-----------------------------------------
-*Items:*
-${itemsText}
-----------------------------------------
-*Total: ₹${newInvoice.total.toFixed(2)}*
-Thank you for your business!`;
-
-          const whatsappUrl = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(receiptMsg)}`;
-          const smsUrl = `sms:${cleanPhone}${Platform.OS === 'ios' ? '&' : '?'}body=${encodeURIComponent(receiptMsg)}`;
-
-          Linking.openURL(whatsappUrl).catch(() => {
-            Linking.openURL(smsUrl).catch(() => {
-              Alert.alert('Error', 'Could not open WhatsApp or SMS on this device.');
-            });
-          });
-        }
-        return;
+      if (NativeModules.RNShare) {
+        const Share = require('react-native-share').default;
+        await Share.shareSingle({
+          title: 'Share Invoice PDF',
+          url: pdfUri,
+          type: 'application/pdf',
+          filename: fileName,
+          social: Share.Social.WHATSAPP,
+          whatsAppNumber: cleanPhone,
+        });
+      } else if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(pdfUri, {
+          mimeType: 'application/pdf',
+          dialogTitle: fileName,
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        throw new Error('PDF sharing is not available on this device.');
       }
 
-      // Format receipt text description message
-      const itemsText = newInvoice.items.map(item => `- ${item.name} (${item.quantity} x ₹${item.price.toFixed(2)})`).join('\n');
-      const receiptMsg = `*INVOICE FROM ${user?.shopName || 'SHOP'}*
-----------------------------------------
-*Invoice No:* ${newInvoice.invoice_number}
-*Customer:* ${newInvoice.customer_name}
-----------------------------------------
-*Items:*
-${itemsText}
-----------------------------------------
-*Total: ₹${newInvoice.total.toFixed(2)}*
-Thank you for your business!`;
-
-      // 2. Share single to WhatsApp directly (when native RNShare is compiled in the app)
-      const Share = require('react-native-share').default;
-      const shareOptions = {
-        title: 'Share Receipt',
-        message: receiptMsg,
-        url: uri, // local path to PNG viewshot
-        social: Share.Social.WHATSAPP,
-        whatsAppNumber: cleanPhone, // Customer's phone number without leading '+'
-      };
-
-      await Share.shareSingle(shareOptions);
+      setSuccessDialogVisible(false);
     } catch (err) {
-      console.log('Direct WhatsApp share error:', err);
-      // Fallback: system share menu
-      Alert.alert(
-        'WhatsApp Direct Share Failed',
-        'Could not open WhatsApp directly with image. Would you like to use the system share menu instead?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Use Share Menu',
-            onPress: async () => {
-              try {
-                const uri = await captureRef(receiptRef, { format: 'png', quality: 0.8 });
-                await Sharing.shareAsync(uri);
-              } catch (shareErr) {
-                console.error(shareErr);
-              }
-            }
-          }
-        ]
-      );
+      console.error('PDF share failed:', err);
+      Alert.alert('PDF Share Error', err.message || 'Failed to generate or share the invoice PDF.');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -1244,7 +1192,7 @@ Thank you for your business!`;
                     icon="whatsapp"
                     textColor="#fff"
                   >
-                    Send Bill
+                    Send PDF
                   </Button>
                   <Button
                     mode="contained"
