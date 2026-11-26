@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, StyleSheet, ScrollView, Alert, Switch, TouchableOpacity, Image } from 'react-native';
-import { Text, Button, Card, Divider, Portal, Dialog, TextInput, List, SegmentedButtons, useTheme } from 'react-native-paper';
+import { Text, Button, Card, Divider, Portal, Dialog, TextInput, List, SegmentedButtons, Checkbox, useTheme } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { useNavigation } from '@react-navigation/native';
 import { AuthContext } from '../context/AuthContext';
 import { ThemeContext } from '../context/ThemeContext';
 import { syncService } from '../services/syncService';
 import { dbService } from '../services/dbService';
 
 export default function SyncScreen() {
+  const navigation = useNavigation();
   const { user, logout, updateUser } = useContext(AuthContext);
   const { isDarkMode, toggleDarkMode, themeColor, changeThemeColor } = useContext(ThemeContext);
   const theme = useTheme();
@@ -69,6 +71,14 @@ export default function SyncScreen() {
   const [activeDialog, setActiveDialog] = useState(null); // 'barcode' | 'discount' | 'return_refund' | 'report_view' | 'login_history' | 'session_mgr' | 'backup_restore'
   const [dialogTitle, setDialogTitle] = useState('');
   const [dialogContent, setDialogContent] = useState('');
+  const [reportName, setReportName] = useState('Sales Report');
+  const [reportFrom, setReportFrom] = useState('');
+  const [reportTo, setReportTo] = useState('');
+  const [reportLayout, setReportLayout] = useState('detailed');
+  const [reportColumns, setReportColumns] = useState(['Date', 'Invoice #', 'Customer', 'Total']);
+  const [reportFigures, setReportFigures] = useState(['Invoice count', 'Sales total', 'Tax total', 'Average invoice']);
+  const [reportInvoices, setReportInvoices] = useState([]);
+  const [reportProducts, setReportProducts] = useState([]);
 
   // Load saved local settings
   useEffect(() => {
@@ -278,6 +288,111 @@ export default function SyncScreen() {
     setDialogContent(content);
   };
 
+  const openReport = async (name) => {
+    setReportName(name);
+    const config = await AsyncStorage.getItem(`analytics_report_${name}`);
+    const saved = config ? JSON.parse(config) : null;
+    setReportFrom(saved?.from || '');
+    setReportTo(saved?.to || '');
+    setReportLayout(saved?.layout || 'detailed');
+    setReportColumns(saved?.columns || ['Date', 'Invoice #', 'Customer', 'Total']);
+    setReportFigures(saved?.figures || ['Invoice count', 'Sales total', 'Tax total', 'Average invoice']);
+    try {
+      const [invoices, products] = await Promise.all([
+        dbService.getInvoices(user.id),
+        dbService.getProducts(user.id),
+      ]);
+      setReportInvoices(invoices || []);
+      setReportProducts(products || []);
+    } catch (error) {
+      console.error('Could not load report data:', error);
+      setReportInvoices([]);
+      setReportProducts([]);
+    }
+    setActiveDialog('report_view');
+  };
+
+  const saveReportConfig = async () => {
+    const validDate = value => !value || /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00`));
+    if (!validDate(reportFrom) || !validDate(reportTo)) {
+      Alert.alert('Check date format', 'Enter dates as YYYY-MM-DD.');
+      return;
+    }
+    if (reportFrom && reportTo && reportFrom > reportTo) {
+      Alert.alert('Check date range', 'The start date must be on or before the end date.');
+      return;
+    }
+    await AsyncStorage.setItem(`analytics_report_${reportName}`, JSON.stringify({
+      from: reportFrom.trim(), to: reportTo.trim(), layout: reportLayout,
+      columns: reportColumns, figures: reportFigures,
+    }));
+    Alert.alert('Report saved', 'Your date range, figures, columns, and layout have been saved.');
+  };
+
+  const toggleReportOption = (list, setList, value) => {
+    setList(list.includes(value) ? list.filter(item => item !== value) : [...list, value]);
+  };
+
+  const reportIsInventory = /inventory|stock/i.test(reportName);
+  const filteredReportInvoices = reportInvoices.filter(invoice => {
+    const day = String(invoice.created_at || '').slice(0, 10);
+    return (!reportFrom || day >= reportFrom) && (!reportTo || day <= reportTo);
+  });
+  const filteredReportProducts = reportProducts.filter(product => {
+    const day = String(product.updated_at || '').slice(0, 10);
+    return (!reportFrom || day >= reportFrom) && (!reportTo || day <= reportTo);
+  });
+  const reportSales = filteredReportInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0);
+  const reportTax = filteredReportInvoices.reduce((sum, invoice) => sum + Number(invoice.tax || 0), 0);
+  const reportDiscount = filteredReportInvoices.reduce((sum, invoice) => sum + Number(invoice.discount || 0), 0);
+  const reportStockValue = filteredReportProducts.reduce((sum, product) => sum + Number(product.stock || 0) * Number(product.price || 0), 0);
+  const reportMetricValues = {
+    'Invoice count': filteredReportInvoices.length,
+    'Sales total': `₹${reportSales.toLocaleString('en-IN')}`,
+    'Tax total': `₹${reportTax.toLocaleString('en-IN')}`,
+    'Discount total': `₹${reportDiscount.toLocaleString('en-IN')}`,
+    'Average invoice': `₹${(filteredReportInvoices.length ? reportSales / filteredReportInvoices.length : 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`,
+    'Product count': filteredReportProducts.length,
+    'Stock quantity': filteredReportProducts.reduce((sum, product) => sum + Number(product.stock || 0), 0),
+    'Stock value': `₹${reportStockValue.toLocaleString('en-IN')}`,
+  };
+  const reportRows = reportIsInventory
+    ? filteredReportProducts.slice(0, 5).map(product => ({
+      'Product': product.name, 'SKU': product.sku || '—', 'Quantity': product.stock,
+      'Unit price': `₹${Number(product.price || 0).toLocaleString('en-IN')}`,
+    }))
+    : filteredReportInvoices.slice(0, 5).map(invoice => ({
+      'Date': new Date(invoice.created_at).toLocaleDateString(),
+      'Invoice #': `#${invoice.invoice_number}`, 'Customer': invoice.customer_name,
+      'Subtotal': `₹${Number(invoice.subtotal || 0).toLocaleString('en-IN')}`,
+      'Tax': `₹${Number(invoice.tax || 0).toLocaleString('en-IN')}`,
+      'Discount': `₹${Number(invoice.discount || 0).toLocaleString('en-IN')}`,
+      'Total': `₹${Number(invoice.total || 0).toLocaleString('en-IN')}`,
+      'Payment method': invoice.payment_method || '—',
+    }));
+  const reportProductById = Object.fromEntries(reportProducts.map(product => [product.id, product]));
+  const salesDashboard = filteredReportInvoices.reduce((summary, invoice) => {
+    let items = [];
+    try { items = JSON.parse(invoice.items_json || '[]'); } catch (error) { items = []; }
+    summary.income += Number(invoice.total || 0);
+    summary.count += 1;
+    for (const item of items) {
+      const product = reportProductById[item.productId] || {};
+      const quantity = Number(item.quantity || 0);
+      const revenue = Number(item.total ?? (Number(item.price || 0) * quantity));
+      summary.cost += Number(product.purchase_price || 0) * quantity;
+      const category = product.category || 'Uncategorized';
+      summary.categories[category] = (summary.categories[category] || 0) + revenue;
+      const customer = invoice.customer_name || 'Walk-in customer';
+      summary.customers[customer] = (summary.customers[customer] || 0) + revenue;
+    }
+    return summary;
+  }, { income: 0, cost: 0, count: 0, categories: {}, customers: {} });
+  salesDashboard.profit = salesDashboard.income - salesDashboard.cost;
+  const salesCategories = Object.entries(salesDashboard.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const salesCustomers = Object.entries(salesDashboard.customers).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const salesBarMax = Math.max(1, ...salesCategories.map(([, value]) => value));
+
   return (
     <Portal.Host>
       <ScrollView contentContainerStyle={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -364,6 +479,15 @@ export default function SyncScreen() {
                   descriptionStyle={{ color: theme.colors.onSurface + 'b3' }}
                   left={props => <List.Icon {...props} icon="percent" color={theme.colors.primary} />}
                   onPress={() => setGstTaxDialogVisible(true)}
+                />
+                <List.Item
+                  title="Purchase Inventory"
+                  titleStyle={{ color: theme.colors.onSurface, fontWeight: 'bold' }}
+                  description="Manage stock, product costs, and inventory"
+                  descriptionStyle={{ color: theme.colors.onSurface + 'b3' }}
+                  left={props => <List.Icon {...props} icon="package-variant-closed" color={theme.colors.primary} />}
+                  right={props => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
+                  onPress={() => navigation.navigate('PurchaseInventory')}
                 />
               </View>
             </List.Accordion>
@@ -461,24 +585,15 @@ export default function SyncScreen() {
               titleStyle={[styles.accordionTitle, { color: theme.colors.onSurface }]}
             >
               <View style={[styles.accordionChild, { backgroundColor: theme.colors.surfaceVariant }]}>
-                <Text style={[styles.subLabel, { color: theme.colors.onSurface + '99' }]}>Tap any report to view immediate summaries:</Text>
-                
-                <View style={styles.gridContainer}>
-                  {['Sales Report', 'Purchase Report', 'Profit & Loss', 'Inventory Report', 'Stock Report', 'GST Report', 'Customer Report', 'Supplier Report'].map((repName, idx) => (
-                    <TouchableOpacity 
-                      key={idx} 
-                      style={[styles.gridBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}
-                      onPress={() => showGeneralDialog(
-                        'report_view', 
-                        repName, 
-                        `Current summary for ${repName}:\n\nTotal volume matches active database invoice queries.\nAll stats compiled up to the current date: ${new Date().toLocaleDateString()}`
-                      )}
-                    >
-                      <List.Icon icon="file-document" color={theme.colors.primary} />
-                      <Text style={[styles.gridText, { color: theme.colors.onSurface }]}>{repName}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                <List.Item
+                  title="Reports And Analytis"
+                  titleStyle={{ color: theme.colors.onSurface, fontWeight: 'bold' }}
+                  description="Open the latest live Reports & Analytics dashboard"
+                  descriptionStyle={{ color: theme.colors.onSurface + 'b3' }}
+                  left={props => <List.Icon {...props} icon="chart-box" color={theme.colors.primary} />}
+                  right={props => <List.Icon {...props} icon="chevron-right" color={theme.colors.onSurfaceVariant} />}
+                  onPress={() => navigation.navigate('Analytics')}
+                />
               </View>
             </List.Accordion>
 
@@ -955,7 +1070,100 @@ export default function SyncScreen() {
 
       {/* DIALOG: General Informational Popups */}
       <Portal>
-        <Dialog visible={activeDialog !== null} onDismiss={() => setActiveDialog(null)}>
+        <Dialog visible={activeDialog === 'report_view'} onDismiss={() => setActiveDialog(null)} style={{ maxHeight: '90%' }}>
+          <Dialog.Title>{reportName}</Dialog.Title>
+          <Dialog.ScrollArea style={{ maxHeight: 520 }}>
+            <ScrollView>
+              <View style={{ paddingVertical: 8 }}>
+                <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Date range (YYYY-MM-DD)</Text>
+                <TextInput label="From date" value={reportFrom} onChangeText={setReportFrom} placeholder="2026-01-01" mode="outlined" dense />
+                <TextInput label="To date" value={reportTo} onChangeText={setReportTo} placeholder="2026-12-31" mode="outlined" dense style={{ marginTop: 8 }} />
+
+                <Text style={{ fontWeight: 'bold', marginTop: 16 }}>Figures shown</Text>
+                {['Invoice count', 'Sales total', 'Tax total', 'Discount total', 'Average invoice', 'Product count', 'Stock quantity', 'Stock value'].map(item => (
+                  <Checkbox.Item key={item} label={item} status={reportFigures.includes(item) ? 'checked' : 'unchecked'} onPress={() => toggleReportOption(reportFigures, setReportFigures, item)} />
+                ))}
+
+                <Text style={{ fontWeight: 'bold', marginTop: 12 }}>Columns</Text>
+                {['Date', 'Invoice #', 'Customer', 'Subtotal', 'Tax', 'Discount', 'Total', 'Payment method', 'Product', 'SKU', 'Quantity', 'Unit price'].map(item => (
+                  <Checkbox.Item key={item} label={item} status={reportColumns.includes(item) ? 'checked' : 'unchecked'} onPress={() => toggleReportOption(reportColumns, setReportColumns, item)} />
+                ))}
+
+                <Text style={{ fontWeight: 'bold', marginTop: 12 }}>Layout</Text>
+                <SegmentedButtons value={reportLayout} onValueChange={setReportLayout} buttons={[
+                  { value: 'compact', label: 'Compact' },
+                  { value: 'detailed', label: 'Detailed' },
+                ]} />
+
+                <Text style={{ fontWeight: 'bold', marginTop: 16 }}>Preview</Text>
+                {reportName === 'Sales Report' ? (
+                  <View style={{ marginTop: 10 }}>
+                    <View style={{ backgroundColor: '#eff6ff', borderRadius: 12, padding: 14, marginBottom: 10 }}>
+                      <Text style={{ color: '#475569', fontSize: 13 }}>Total sells (invoices)</Text>
+                      <Text style={{ color: '#1d4ed8', fontSize: 28, fontWeight: 'bold' }}>{salesDashboard.count}</Text>
+                      <Text style={{ color: '#475569', fontSize: 12 }}>{reportFrom || reportTo ? `${reportFrom || 'Beginning'} to ${reportTo || 'Today'}` : 'All dates'}</Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 7, marginBottom: 12 }}>
+                      {[
+                        { title: 'Sales Income', value: salesDashboard.income, color: '#0e7490' },
+                        { title: 'Sales Profit', value: salesDashboard.profit, color: '#2563eb' },
+                        { title: 'Sales Cost', value: salesDashboard.cost, color: '#7c3aed' },
+                      ].map(metric => (
+                        <View key={metric.title} style={{ flex: 1, minWidth: 0, backgroundColor: theme.colors.surfaceVariant, borderRadius: 10, padding: 9 }}>
+                          <Text numberOfLines={1} style={{ fontSize: 11, color: theme.colors.onSurfaceVariant }}>{metric.title}</Text>
+                          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 15, fontWeight: 'bold', color: metric.color, marginTop: 5 }}>₹{metric.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={{ backgroundColor: theme.colors.surface, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Sales Performance · Top Customers</Text>
+                      {salesCustomers.length ? salesCustomers.map(([name, amount], index) => (
+                        <View key={name} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: index === salesCustomers.length - 1 ? 0 : StyleSheet.hairlineWidth, borderColor: theme.colors.outlineVariant }}>
+                          <Text numberOfLines={1} style={{ flex: 1, color: theme.colors.onSurface }}>{index + 1}. {name}</Text>
+                          <Text style={{ fontWeight: '600', color: theme.colors.onSurface }}>₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                        </View>
+                      )) : <Text style={{ color: theme.colors.onSurfaceVariant }}>No sales in this date range.</Text>}
+                    </View>
+
+                    <View style={{ backgroundColor: theme.colors.surface, borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>Product Analysis · Sales by Category</Text>
+                      {salesCategories.length ? salesCategories.map(([name, amount]) => (
+                        <View key={name} style={{ marginBottom: 8 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+                            <Text numberOfLines={1} style={{ flex: 1, color: theme.colors.onSurface }}>{name}</Text>
+                            <Text style={{ color: theme.colors.onSurfaceVariant }}>₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</Text>
+                          </View>
+                          <View style={{ height: 7, backgroundColor: theme.colors.surfaceVariant, borderRadius: 5, overflow: 'hidden' }}>
+                            <View style={{ width: `${Math.max(3, amount / salesBarMax * 100)}%`, height: 7, backgroundColor: '#568cff', borderRadius: 5 }} />
+                          </View>
+                        </View>
+                      )) : <Text style={{ color: theme.colors.onSurfaceVariant }}>No product category data in this date range.</Text>}
+                    </View>
+                    <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 11, marginBottom: 8 }}>Cost and profit use each sold product’s saved purchase price. Products without a purchase price count as zero cost.</Text>
+                  </View>
+                ) : null}
+                <Text style={{ marginTop: 6 }}>{reportFigures
+                  .filter(item => reportIsInventory ? ['Product count', 'Stock quantity', 'Stock value'].includes(item) : ['Invoice count', 'Sales total', 'Tax total', 'Discount total', 'Average invoice'].includes(item))
+                  .map(item => `${item}: ${reportMetricValues[item]}`).join('  ·  ') || 'Select figures above to show them in the report.'}</Text>
+                {reportLayout === 'detailed' && reportRows.map((row, index) => (
+                  <Text key={index} style={{ marginTop: 6, color: '#475569' }}>{reportColumns
+                    .filter(column => row[column] !== undefined)
+                    .map(column => `${column}: ${row[column]}`).join('  ·  ') || 'Choose columns above to preview row details.'}</Text>
+                ))}
+                {(reportName === 'Purchase Report' || reportName === 'Supplier Report') && <Text style={{ marginTop: 8, color: '#b45309' }}>Purchase records are not stored in this app yet.</Text>}
+                {(reportName === 'GST Report') && <Text style={{ marginTop: 8 }}>GST shown above is calculated from saved sales invoices.</Text>}
+              </View>
+            </ScrollView>
+          </Dialog.ScrollArea>
+          <Dialog.Actions>
+            <Button onPress={() => setActiveDialog(null)}>Close</Button>
+            <Button onPress={saveReportConfig}>Save report</Button>
+          </Dialog.Actions>
+        </Dialog>
+
+        <Dialog visible={activeDialog !== null && activeDialog !== 'report_view'} onDismiss={() => setActiveDialog(null)}>
           <Dialog.Title>{dialogTitle}</Dialog.Title>
           <Dialog.Content>
             <Text style={{ fontSize: 14, color: '#334155', lineHeight: 20 }}>
