@@ -7,6 +7,8 @@ import RegisterScreen from '../screens/RegisterScreen';
 import MainScreen from '../screens/MainScreen';
 import InvoiceDetailsScreen from '../screens/InvoiceDetailsScreen';
 import InvoiceHistoryScreen from '../screens/InvoiceHistoryScreen';
+import AnalyticsScreen from '../screens/AnalyticsScreen';
+import InventoryScreen from '../screens/InventoryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -26,6 +28,26 @@ export default function AppNavigator() {
       {isAuthenticated ? (
         <>
           <Stack.Screen name="Main" component={MainScreen} />
+          <Stack.Screen
+            name="Analytics"
+            component={AnalyticsScreen}
+            options={{
+              headerShown: true,
+              title: 'Reports & Analytics',
+              headerTintColor: '#fff',
+              headerStyle: { backgroundColor: '#071327' },
+            }}
+          />
+          <Stack.Screen
+            name="PurchaseInventory"
+            component={InventoryScreen}
+            options={{
+              headerShown: true,
+              title: 'Purchase Inventory',
+              headerTintColor: '#fff',
+              headerStyle: { backgroundColor: '#5a4bda' },
+            }}
+          />
           <Stack.Screen 
             name="InvoiceDetails" 
             component={InvoiceDetailsScreen} 
